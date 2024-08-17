@@ -30,14 +30,9 @@ def generate_dset_dict_codes(args):
     label_path = args.mmap_path + "/label.pt"
     info_path = args.mmap_path + "/alphas_info.pkl"    
 
-
-    # spawns child process, then waits for completion
+    # spawn child process using current Python executable, then wait for completion
     path = os.path.join(os.getcwd(), 'src')
-    if torch.backends.mps.is_available():
-        python_path = "/opt/miniconda3/envs/smt_compile/bin/python3"
-    else:
-        python_path = "python3"
-    subprocess.run([f"{python_path}", "-c", f"import sys; sys.path.append('{path}'); import torch; torch.set_grad_enabled(False); from util import _new_process_main; _new_process_main('{args_path}', '{dset_path}', '{phi_path}', '{label_path}', '{info_path}')"])
+    subprocess.run([f"{sys.executable}", "-c", f"import sys; sys.path.append('{path}'); import torch; torch.set_grad_enabled(False); from util import _new_process_main; _new_process_main('{args_path}', '{dset_path}', '{phi_path}', '{label_path}', '{info_path}')"])
 
     # read results from files
     img_label = torch.load(label_path)
