@@ -12,7 +12,7 @@ from queue import Empty
 from input_output import mmap_unified_read, mmap_unified_write, mmap_unified_write_zero_copy, MemmapCSR
 from matrix_utils import csr_row_view, profile_log
 from multiproc import MultiProcessDispatch
-from ctypes_interface import CSRSerialize, CSRSliceSerialize, CSRSliceSerialize64, csr_col_slice_param_c, csr_col_slice_c
+from ctypes_interface import CSRSerialize, CSRSliceSerialize, CSRSliceSerialize64, csr_col_slice_param_c, csr_col_slice_c, c_impl_available
 
 
 
@@ -100,8 +100,8 @@ class SliceCacheWorkSlice():
         elif self.alphas_2d_slice:
             # Performs 2D slicing along single set of rows + then batches across all columns
             slc = csr_row_view(alphas, self.start, self.end)  
-            if torch.cuda.is_available():
-                tmp = csr_col_slice_param(args, slc, self.batch_sz_2d)      # doesnt actually use cuda, just an easy way to check if running on mac or linux machine
+            if c_impl_available():
+                tmp = csr_col_slice_param(args, slc, self.batch_sz_2d)
                 out = []
                 for o in tmp:
                     # print(f"{self.start} <-> {self.end}: {o.shape} {o.start} {o.end} {o.col_start} {o.col_end} {slc.shape}")

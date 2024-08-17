@@ -8,7 +8,7 @@ from random import randint
 import sys
 from scipy.sparse.sparsetools import coo_tocsr, csr_todense
 
-from ctypes_interface import coo2csr_param
+from ctypes_interface import coo2csr_param, c_impl_available
 
 def mmap_file_init(filename, data, flush=True):
     """Create a file that contains the given data."""
@@ -75,7 +75,7 @@ def mmap_unified_read(src_file, src_dtype_sz_list):
 
 def mmap_coo_arrays_to_csr(args, data, row, col, dtype, shape, mmap=True, verbose=True, disable_c=False):
     # Convert COO mmap to CSR mmap without bringing entire matrix into memory
-    if os.path.exists("src/c/bin/coo2csr.so") and row.dtype == np.int64 and col.dtype == np.int64 and not disable_c and mmap:
+    if c_impl_available() and row.dtype == np.int64 and col.dtype == np.int64 and not disable_c and mmap:
         # Give preference to C-version of COO to CSR if it exists
         indptr, indices, csr_data = _c_coo_to_csr(data, row, col, shape, True, args.mmap_path)
     else:

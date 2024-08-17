@@ -12,6 +12,7 @@ from matrix_utils import mx_inv_sqrt, _np_is_real_sym, force_symmetric
 from matmul import GpuSparseMatmul
 from slice import PreMatmulCacheGen, csr_col_slice, csr_col_slice_transpose
 from loss_mx_calc import LossMatrixCalc
+from ctypes_interface import c_impl_available
 
 class ManifoldEmbedLayer:
     def __init__(self, args, alphas, diff_op, embed_dim, proj=None):
@@ -95,12 +96,12 @@ class ManifoldEmbedLayer:
         # Given a CSR matrix, slice it according to the proper batch size, then store as a mmap
         print("Generating sliced cache for faster matmuls...", flush=True)
         c_enable = torch.cuda.is_available()
-        if col_slice and not transpose_2d_slice and c_enable:
+        if col_slice and not transpose_2d_slice and c_impl_available():
             print("\tUsing optimized C-code for column slicing...")
             cache_dir = args.mmap_path + f"/col_slice_cache_{randint(-sys.maxsize, sys.maxsize)}"
             os.mkdir(cache_dir)
             return csr_col_slice(cache_dir, alphas, batch_sz, True), cache_dir
-        elif col_slice and transpose_2d_slice and c_enable:
+        elif col_slice and transpose_2d_slice and c_impl_available():
             print("\tUsing optimized C-code for tranposed column slicing...")
             return csr_col_slice_transpose(args, alphas, batch_sz)
         else:
