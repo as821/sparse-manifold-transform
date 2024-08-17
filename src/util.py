@@ -7,6 +7,7 @@ import pickle
 import subprocess
 import argparse
 import shutil
+import warnings
 
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
@@ -35,7 +36,9 @@ def generate_dset_dict_codes(args):
     subprocess.run([f"{sys.executable}", "-c", f"import sys; sys.path.append('{path}'); import torch; torch.set_grad_enabled(False); from util import _new_process_main; _new_process_main('{args_path}', '{dset_path}', '{phi_path}', '{label_path}', '{info_path}')"])
 
     # read results from files
-    img_label = torch.load(label_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter(action='ignore', category=FutureWarning)
+        img_label = torch.load(label_path)
     with open(phi_path, "rb") as file: phi = pickle.load(file)
     with open(dset_path, "rb") as file: dset = pickle.load(file)
     with open(info_path, "rb") as file: info = pickle.load(file)

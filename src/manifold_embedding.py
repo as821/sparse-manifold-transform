@@ -201,11 +201,6 @@ class ManifoldEmbedLayer:
 
     def __call__(self, x):
         """Apply calculated SMT to given inputs, return their embeddings."""        
-        
-        if self.args.unnorm_embed:
-            # Un-normalize SC embeddings
-            x.data[:] = 1
-        
         # Want to calculate self.projection @ x, but spmm requires "sparse @ dense" format so instead we calculate (x.T @ self.projection.T).T
         cache = self._gen_slice_cache(self.args, x, self.args.proj_col_chunk, col_slice=True, transpose_2d_slice=True)        # column-slicing, but also transpose slices
         ssm = GpuSparseMatmul(self.projection, cache, False, self.args.proj_row_chunk, dense_matmul=True, mmap_path=self.args.mmap_path, a_shape=x.shape)
