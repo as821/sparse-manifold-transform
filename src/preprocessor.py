@@ -9,7 +9,6 @@ import torchvision.transforms as transforms
 import resource
 import time
 import numpy as np
-import random
 
 from matrix_utils import mx_frac_pow, torch_force_symmetric
 
@@ -184,20 +183,6 @@ class ImagePreprocessor():
 
         vis_idx = 0
         if self.args.vis and vis_enable:
-            # Visualize the patch-ification of the first image in the dataset
-            # img = self.dataset[vis_idx][0]
-            # img = self.dataset[vis_idx][0]
-            # img2 = self.aug_dataset[vis_idx][0]
-            # if self.args.vis_dir == '':
-            # plt.imshow(img.permute((1, 2, 0)))
-            #     plt.imshow(img2.permute((1, 2, 0)))
-
-            
-            # for x in range(self.n_patch_per_dim):
-            #     for y in range(self.n_patch_per_dim):
-            #         p = rearrange(patches[0, x, y],  "(a b) c -> a b c", b=6)
-            #         plt.imshow(p)
-
             vis_patches = rearrange(patches[vis_idx], "a b (c d) e -> (a b) c d e", c=self.args.patch_sz, d=self.args.patch_sz, e=self.n_inp_channels)
             self._patches_vis(vis_patches, n_col=self.n_patch_per_dim)
 
@@ -211,17 +196,11 @@ class ImagePreprocessor():
         # Remove the contextual mean from each patch (centering before whitening)
         print("Calculating contextual patch means...", flush=True)
         c_means = self._context_mean(patches)
-        # plt.imshow(self.dataset[0][0].permute((1, 2, 0)))
-        # plt.imshow(c_means[0].squeeze().unsqueeze(-1))
-        # patches = patches - c_means.unsqueeze(-1).unsqueeze(-1)
         patches = patches - c_means
 
         if self.args.vis and vis_enable:
             vis_patches = rearrange(patches[vis_idx], "a b (c d) e -> (a b) c d e", c=self.args.patch_sz)
             self._patches_vis(vis_patches, n_col=self.n_patch_per_dim)
-            
-            # vis_means = rearrange(c_means[vis_idx], "a b (c d) e -> (a b) c d e", c=1)
-            # self._patches_vis(vis_means, n_col=self.n_patch_per_dim, full_vis=True)
 
         # Calculate whitening operator + apply it
         print("Calculating and applying whitening operator to all patches...", flush=True)
@@ -253,19 +232,7 @@ class ImagePreprocessor():
             self._patches_vis(vis_patches, n_col=self.n_patch_per_dim)
 
             vis_norm = rearrange(norm, "(a b c d) -> a b c d", a=self.args.samples, c=self.n_patch_per_dim, d=1)
-            # vis_patches = rearrange(vis_patches[vis_idx], "a b c -> (a b) c", c=self.args.patch_sz)
             self._patches_vis(vis_norm[vis_idx].unsqueeze(0), n_col=self.n_patch_per_dim, full_vis=True)
-
-            # visualize heatmap of cosine similarity between one patch + all other patches in an image
-            # vis_patches = rearrange(patches.T, "(a b c) (d e) -> a b c d e", a=self.args.samples, c=self.n_patch_per_dim, e=self.n_inp_channels)
-            # vis_patches = rearrange(vis_patches[vis_idx], "a b (c d) e -> (a b) (c d e)", c=self.args.patch_sz)
-
-            # for idx in range(vis_patches.shape[0]):
-            #     print(idx)
-            #     sim = vis_patches[idx] @ vis_patches.T
-            #     sim = rearrange(sim, "(a b) -> a b", a=self.n_patch_per_dim)
-            #     self._patches_vis(sim.unsqueeze(0).unsqueeze(-1), full_vis=True)
-
         return patches, labels
 
     def _patches_vis(self, orig_patches, n_col=3, title='', subplot_titles=False, full_vis=False):

@@ -104,15 +104,14 @@ def validate_args(args):
         shutil.rmtree(args.mmap_path)
     os.mkdir(args.mmap_path)
 
-    all_match = len(args.dict_sz) == len(args.dict_thresh) and len(args.dict_sz) == len(args.embed_dim) and len(args.dict_sz) == len(args.gq_thresh) and len(args.dict_sz) == len(args.context_sz)
-    assert all_match, "number of SMT layers implicitly defined by number of dict size, threshold parameters, + embedding dimensions"
-
-    for i, j in zip(args.dict_sz, args.embed_dim):
-        assert j <= i, f"Cannot have more embedding dimensions ({j}) than dictionary elements ({i}) (due to linear algebra)."
+    assert args.dict_sz <= args.embed_dim, f"Cannot have more embedding dimensions ({args.embed_dim}) than dictionary elements ({args.dict_sz})."
     if args.cov_chunk < 0: args.cov_chunk = args.dict_sz
     if args.inner_chunk < 0: args.inner_chunk = args.dict_sz
-    args.samples *= 2        # includes horizontal augmentations by default
+    
     assert args.samples > 0
+    
+    # account for horizontal augmentation
+    args.samples *= 2
     return args
 
 
