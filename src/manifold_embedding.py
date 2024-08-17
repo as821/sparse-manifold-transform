@@ -188,7 +188,7 @@ class ManifoldEmbedLayer:
 
         # Select the f eigenvectors with smallest eigenvalues (eigenvectors are COLUMNs of evec matrix (see torch.linalg.eig reference))
         # Need to convert them to rows to give a mapping to f-dimensional space
-        if args.color_embed_drop:
+        if not args.disable_color_embed_drop:
             skip_first_n = 16
             indices = np.argsort(evals, kind='stable')[skip_first_n:(self.embed_dim + skip_first_n)] 
         else:

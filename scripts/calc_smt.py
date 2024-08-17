@@ -12,11 +12,10 @@ import torch
 from einops import rearrange
 import sys
 import os
-import shutil
+
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
-
 from preprocessor import ImagePreprocessor
 from manifold_embedding import ManifoldEmbedLayer
 from diff_op import construct_diff_op

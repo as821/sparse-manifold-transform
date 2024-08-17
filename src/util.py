@@ -118,8 +118,8 @@ def generate_argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', choices=['mnist', 'cifar10'], help='dataset to use')
     parser.add_argument('--dataset-path', required=True, type=str, help='path to dataset (image datasets only)')
-    parser.add_argument('--samples', default=50000, type=int, help='number of training samples to use. negative for full dataset')
-    parser.add_argument('--test-samples', default=10000, type=int, help='number of training samples to use. negative for full dataset')
+    parser.add_argument('--samples', default=50000, type=int, help='number of training samples to use')
+    parser.add_argument('--test-samples', default=10000, type=int, help='number of training samples to use')
     parser.add_argument('--optim', default='two', choices=['one', 'two'], help='optimization equation to use from (2), naming follows the equation numbers from that paper. "one" is first deriv., "two" is second deriv.')
 
     # Image pre-processor
@@ -139,7 +139,7 @@ def generate_argparser():
 
     # SMT Embedding
     parser.add_argument('--embed-dim', default=384, type=int, help='feature manifold dimension (patch embedding dimension, image-level embedding will be much larger)')
-    parser.add_argument('--color_embed_drop', action='store_true', help='drop first 16 embedding dim')
+    parser.add_argument('--disable_color_embed_drop', action='store_true', help='do not drop the first 16 embedding dim')
 
     # Classifier
     parser.add_argument('--nnclass-k', default=30, type=int, help='value of k for k-NN classifier')
