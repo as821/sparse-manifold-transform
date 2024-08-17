@@ -74,6 +74,7 @@ class MultiProcessDispatch():
         res_q = ctx.Queue()
         work_q = ctx.Queue(maxsize=self.work_q_len())      # not unbounded, otherwise main process may load entire a matrix into memmory (in chunks)
         work_done = ctx.Event()
+        init_args = self.worker_init_args()
         proc = self._kickoff_workers(ctx, work_q, res_q, work_done, offset, init_args, daemon, n_proc)
 
         # Parcel out work to workers, one batch at a time

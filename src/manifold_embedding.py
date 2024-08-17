@@ -216,7 +216,6 @@ class ManifoldEmbedLayer:
         for start in tqdm(range(0, beta_flat.shape[1], chnk_sz)):
             end = min(beta_flat.shape[1], start + chnk_sz)
             beta_flat[:, start:end] /= (np.linalg.norm(beta_flat[:, start:end], ord=2, axis=0) + 1e-20)
-        print("\tdone.", flush=True)
         return beta_flat
 
 
