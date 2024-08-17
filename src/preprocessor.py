@@ -48,7 +48,7 @@ class ImagePreprocessor():
         else:
             self.n_inp_channels = data.shape[0]
 
-        self.n_patch_per_dim = int((self.img_sz - self.args.patch_sz) / self.args.stride) + 1
+        self.n_patch_per_dim = self.img_sz - self.args.patch_sz + 1
         self.n_patch_per_img = self.n_patch_per_dim ** 2
         self.input_patch_dim = args.patch_sz ** 2 * self.n_inp_channels
 
@@ -109,19 +109,11 @@ class ImagePreprocessor():
 
     def _calc_whitening(self, patches):
         """Given tensor of centered patches, calculate the whitening (and unwhitening) operators."""
-        if self.args.disable_whiten:
-            self.whiten_op = self.unwhiten_op = torch.eye(n=patches.shape[1])
-            return
-        
         if self.whiten_op is not None:
             assert self.unwhiten_op is not None
             return
         assert self.unwhiten_op is None
 
-        if self.args.zero_whiten_mean:
-            mn = patches.mean(axis=0).unsqueeze(0)
-            print(f"Whitening max/min mean prior to adjustment: {mn.max()} {mn.min()}")
-            patches -= mn
         cov_mx = torch.cov(patches.T)
         cov_mx = torch_force_symmetric(cov_mx)
         tol = self.args.whiten_tol      # NOTE: this is actually a crucial parameter that can swing performance by multiple percentage points
@@ -159,7 +151,7 @@ class ImagePreprocessor():
         conv = torch.nn.Conv2d(in_channels=self.n_inp_channels, 
                                 out_channels=patch_dim, 
                                 kernel_size=(self.args.patch_sz, self.args.patch_sz), 
-                                stride=self.args.stride,
+                                stride=1,
                                 padding=0)
 
         # One filter for each location in the patch (flattens 3 color channels as well)
@@ -327,7 +319,7 @@ class ImagePreprocessor():
             for y in range(self.n_patch_per_dim):
                 pairs[(x, y)] = set()
                 for nbr in _context(x, y, self.n_patch_per_dim, context_sz):
-                    if nbr not in pairs or (x, y) not in pairs[nbr] or self.args.all_ctx_pairs:
+                    if nbr not in pairs or (x, y) not in pairs[nbr]:
                         pairs[(x, y)].add(nbr)
         
         # Coallesce into list of pixel pairs

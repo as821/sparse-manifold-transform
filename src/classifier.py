@@ -116,30 +116,18 @@ class WeightedKNNClassifier():
 
 
 
-def test_set_classify(args, train_set, sc_layers, smt_layers, train_embed, train_labels):
+def test_set_classify(args, train_set, sc_layer, smt_layer, train_embed, train_labels):
     print("Test set evaluation.", flush=True)
 
     dset = generate_dset(args, 'test', train_set)
     betas, img_label = dset.generate_data(args.test_samples, test=True)
 
-    if args.sc_only:
-        if not isinstance(betas, (torch.Tensor)):
-            betas = torch.from_numpy(betas)
-        betas = sc_layers(args, betas, test=True).todense()
-        betas = rearrange(betas, "d (a b c) -> a b c d", a=args.test_samples, b=dset.n_patch_per_dim, c=dset.n_patch_per_dim)
-    else:    
-        # Apply pre-computed SMT to test set
-        for idx, pr in enumerate(zip(sc_layers, smt_layers, args.embed_dim)):
-            sc, smt, embed_dim = pr
-            if idx != 0:
-                betas = torch.from_numpy(betas).type(torch.float32)
+    # Calculate embedding of test set images using learned SMT
+    print("Calculating SMT embeddings...", flush=True)
+    betas = sc_layer(args, betas, test=True)
+    betas = smt_layer(betas)
 
-            # Calculate embedding of test set images using learned SMT
-            print("Calculating SMT embeddings...", flush=True)
-            betas = sc(args, betas, test=True)
-            betas = smt(betas)
-
-        betas = rearrange(betas, "d (a b c) -> a b c d", a=args.test_samples, b=dset.n_patch_per_dim, c=dset.n_patch_per_dim, d=embed_dim)
+    betas = rearrange(betas, "d (a b c) -> a b c d", a=args.test_samples, b=dset.n_patch_per_dim, c=dset.n_patch_per_dim, d=args.embed_dim)
 
     img_embed = ImagePreprocessor.aggregate_image_embed(betas)
 

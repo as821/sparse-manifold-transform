@@ -159,17 +159,10 @@ class SparseWorkSlice():
             codes[:, ind] /= col_sums[ind]
         running = profile_log(profile, running, "norm")
 
-
         # track some basic stats
         avg_enc = codes[codes > 0]
         avg_enc_cnt = avg_enc.shape[0]
         avg_enc = avg_enc.sum()     # of the dictionary elements used in encoding, what is the average cosine similarity to that element
-
-        if args.sc_only_normalize and args.sc_only:
-            # L2 normalize codes for each patch
-            n = torch.linalg.vector_norm(codes, ord=2, dim=0) + 1e-20      # avoid div by zero
-            # print(f"{codes.shape} {n.shape}")
-            codes /= n
         
         running = profile_log(profile, running, "logging (1)")
         if torch.cuda.is_available():
@@ -195,12 +188,6 @@ def generate_dict(args, x, dict_sz, dict_thresh):
     NOTE: could run dictionary learning with multiple initialization and pick the best (like normal K-Means)
     """
     print("Generating dictionary...", flush=True)
-
-    # print(f"Max norm: {np.linalg.norm(x, ord=2, axis=0).max()}")
-    # assert args.dict_path != "", "Must specify a dictionary file to load from."
-    # print(f"Loading dictionary from {args.dict_path}...", flush=True)
-    # phi = np.load(args.dict_path, allow_pickle=True)
-    # phi = torch.from_numpy(phi)
 
     # Return a random selection of (unique) image patches as the dictionary to use
     ptr = 0 
@@ -233,9 +220,6 @@ def generate_dict(args, x, dict_sz, dict_thresh):
             c_idx = i - start
             slc = sim[c_idx, :]
             if not torch.any(slc > dict_thresh):
-                # mx = sim[c_idx, :].max()
-                # mn = sim[c_idx, :].min()
-
                 if len(c_added_idx) > 0:
                     # Compare with any of the other candidates that have already been added during this iteration
                     t = torch.tensor(c_added_idx)
@@ -243,19 +227,12 @@ def generate_dict(args, x, dict_sz, dict_thresh):
                     slc = c_sim[c_idx, t]
                     if torch.any(slc > dict_thresh).item():
                         continue
-                    # mx = max(mx, c_sim[c_idx, t].max())
-                    # mn = min(mn, c_sim[c_idx, t].min())
-
 
                 phi[:, ptr] = cand[:, c_idx]
                 ptr += 1
                 pbar.update(1)
                 c_added_idx.append(c_idx)
                 idx_list.append(shuf[i])
-
-                # if args.vis and dset is not None:
-                #     print(f"Max similarity: {mx}, min similarity: {mn}")
-                #     dset.dict_vis(phi)
 
                 if ptr == dict_sz:
                     break
@@ -272,13 +249,6 @@ def generate_dict(args, x, dict_sz, dict_thresh):
     perm = torch.randperm(phi.shape[1])
     idx_list = [idx_list[i] for i in perm.tolist()]
     phi = phi[:, perm]
-    if args.dict_path != "":
-        out_phi = phi
-        if isinstance(phi, (torch.Tensor,)):
-            out_phi = phi.numpy()
-        elif 'scipy.sparse' in str(type(phi)):      # janky check for sparse representations
-            out_phi = phi.todense()
-        np.save(args.dict_path, out_phi)
 
     if torch.cuda.is_available(): torch.cuda.empty_cache()
 

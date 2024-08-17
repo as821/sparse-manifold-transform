@@ -124,37 +124,27 @@ def generate_argparser():
     parser.add_argument('--samples', default=50000, type=int, help='number of training samples to use. negative for full dataset')
     parser.add_argument('--test-samples', default=10000, type=int, help='number of training samples to use. negative for full dataset')
     parser.add_argument('--optim', default='two', choices=['one', 'two'], help='optimization equation to use from (2), naming follows the equation numbers from that paper. "one" is first deriv., "two" is second deriv.')
-    parser.add_argument('--sc_only', action='store_true', help='only run sparse coding')
-    parser.add_argument('--ckpt_path', default="", type=str, help='path to dataset (image datasets only)')
-    parser.add_argument('--load_ckpt', action='store_true', help='load given checkpoint')
-    parser.add_argument('--stride', default=1, type=int, help='stride to use when generating patches from images')
 
     # Image pre-processor
     parser.add_argument('--patch-sz', default=6, type=int, help='image patch size')
-    parser.add_argument('--context-sz', default=3, nargs='+', type=int, help='other patches within this number of pixels is considered a neighbor')
+    parser.add_argument('--context-sz', default=3, type=int, help='other patches within this number of pixels is considered a neighbor')
     parser.add_argument('--grayscale_only', action='store_true', help='convert all input images to grayscale')
-    parser.add_argument('--zero_whiten_mean', action='store_true', help='zero means before calculating whitening matrix')
     parser.add_argument('--unnorm_embed', action='store_true', help='use unnormalized sparse codings when calculating SMT embeddings for train/test set')
     parser.add_argument('--nonzero_patch_norm', action='store_true', help='prevent any image patches from having a zero-norm (convert them to uniform patch by adding small constant before patch normalization)')
     parser.add_argument('--whiten_tol', default=1e-3, type=float, help='scaling of identity added before whitening')
-    parser.add_argument('--disable_whiten', action='store_true', help='do not whiten images')
 
     # Dictionary
-    parser.add_argument('--dict-path', default="", type=str, help='load/store path for the dictionary')
-    parser.add_argument('--dict-sz', default=300, nargs='+', type=int, help='sparse coding dictionary size. should be overcomplete, larger than input data dimension by around 10x')
-    parser.add_argument('--load-dict', action='store_true', help='load dictionary from the given path')
-    parser.add_argument('--all_ctx_pairs', action='store_true', help='use all context pairs, not just the unique ones')
+    parser.add_argument('--dict-sz', default=300, type=int, help='sparse coding dictionary size. should be overcomplete, larger than input data dimension by around 10x')
 
     # Sparse-coding
-    parser.add_argument('--gq_thresh', default=1, nargs='+', type=float, help='general sparse coding cosine similarity threshold. set to >= 1 to recover vector quantization')
-    parser.add_argument('--dict_thresh', default=0.7, nargs='+', type=float, help='sparse coding dictionary element similarity threshold.')
+    parser.add_argument('--gq_thresh', default=1, type=float, help='general sparse coding cosine similarity threshold. set to >= 1 to recover vector quantization')
+    parser.add_argument('--dict_thresh', default=0.7, type=float, help='sparse coding dictionary element similarity threshold.')
     parser.add_argument('--disable_sc_norm', action='store_true', help='do not normalize sparse codes to sum to 1')
     parser.add_argument('--zero_code_disable', action='store_true', help='ensure that no sparse codes are all zeros (map to nearest dict element if necessary)')
     parser.add_argument('--sc_chunk', default=50, type=int, help='chunk size used when calculating sparse coding')
-    parser.add_argument('--sc_only_normalize', action='store_true', help='L2 normalize sparse codes when using sc_only flag')
 
     # SMT Embedding
-    parser.add_argument('--embed-dim', default=384, nargs='+', type=int, help='feature manifold dimension (patch embedding dimension, image-level embedding will be much larger)')
+    parser.add_argument('--embed-dim', default=384, type=int, help='feature manifold dimension (patch embedding dimension, image-level embedding will be much larger)')
     parser.add_argument('--color_embed_drop', action='store_true', help='drop first 16 embedding dim')
 
     # Classifier
