@@ -12,7 +12,6 @@ import numpy as np
 import random
 
 from matrix_utils import mx_frac_pow, torch_force_symmetric
-from dataset import CLEVR
 
 def generate_dset(args, split='train', train_set=None):
     # Select and generate dataset
@@ -20,8 +19,6 @@ def generate_dset(args, split='train', train_set=None):
         dset = ImagePreprocessor(args, torchvision.datasets.MNIST, split=split, n_channels=1, train_set=train_set)
     elif args.dataset == "cifar10":
         dset = ImagePreprocessor(args, torchvision.datasets.CIFAR10, split=split, train_set=train_set)
-    elif args.dataset == "clevr":
-        dset = ImagePreprocessor(args, CLEVR, split=split, train_set=train_set)
     else:
         raise NotImplementedError
     return dset
@@ -36,13 +33,9 @@ class ImagePreprocessor():
         self.split = split
         trans = [transforms.ToTensor()]
         if args.grayscale_only:
-            assert args.dataset != "clevr"      # not implemeneted yet
             trans.append(transforms.Grayscale())
         
-        if args.dataset == "clevr":
-            self.dataset = dset_obj(root=self.args.dataset_path, train=split=='train', transform=transforms.Compose(trans), download=True, downsample=args.downsample)
-        else:
-            self.dataset = dset_obj(root=self.args.dataset_path, train=split=='train', transform=transforms.Compose(trans), download=True)
+        self.dataset = dset_obj(root=self.args.dataset_path, train=split=='train', transform=transforms.Compose(trans), download=True)
         self.n_class = len(self.dataset.classes)
         
         data = self.dataset[0][0]
@@ -157,35 +150,18 @@ class ImagePreprocessor():
         return out
 
     def train_set_image(self, idx):
-        # apply proper augmentation + return train set image
-        if self.args.n_aug <= 0:
-            # default to using original + horizontal augmented images
-            # alternate between "normal" and augmented datasets 
-            if idx % 2 == 0 or self.args.dataset == "clevr":        # disable horizontal aug. for CLEVR
-                sample = self.dataset[int(idx / 2)]
-            else:
-                # manually apply a horizontal flip augmentation
-                sample = self.dataset[int((idx-1) / 2)]
-                img = transforms.functional.hflip(sample[0])
-                if len(sample) == 1:
-                    sample = (img,)
-                else:
-                    sample = (img, sample[1])
+        # default to using original + horizontal augmented images
+        # alternate between "normal" and augmented datasets 
+        if idx % 2 == 0:
+            sample = self.dataset[int(idx / 2)]
         else:
-            # include the original image + args.n_aug random augmentations of that image
-            base_idx = int(idx / (self.args.n_aug + 1))
-            sample = self.dataset[base_idx]
-            if idx % (self.args.n_aug + 1) != 0:
-                assert self.args.n_aug <= 2, "deterministic only"
-                img = sample[0]
-                if idx % 1 == 0:
-                    img = transforms.functional.hflip(img)
-                elif idx % 2 == 0:
-                    img = transforms.functional.vflip(img)
-                if len(sample) == 1:
-                    sample = (img,)
-                else:
-                    sample = (img, sample[1])
+            # manually apply a horizontal flip augmentation
+            sample = self.dataset[int((idx-1) / 2)]
+            img = transforms.functional.hflip(sample[0])
+            if len(sample) == 1:
+                sample = (img,)
+            else:
+                sample = (img, sample[1])
         return sample
 
 

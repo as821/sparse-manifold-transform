@@ -107,19 +107,11 @@ def validate_args(args):
     all_match = len(args.dict_sz) == len(args.dict_thresh) and len(args.dict_sz) == len(args.embed_dim) and len(args.dict_sz) == len(args.gq_thresh) and len(args.dict_sz) == len(args.context_sz)
     assert all_match, "number of SMT layers implicitly defined by number of dict size, threshold parameters, + embedding dimensions"
 
-    if args.dataset == "clevr":
-        assert args.patch_sz == 5
-    if args.vis_dir != "" and args.depatchify == "center" and args.dataset == "clevr":
-        assert args.patch_sz % 2 == 1
-
     for i, j in zip(args.dict_sz, args.embed_dim):
         assert j <= i, f"Cannot have more embedding dimensions ({j}) than dictionary elements ({i}) (due to linear algebra)."
     if args.cov_chunk < 0: args.cov_chunk = args.dict_sz
     if args.inner_chunk < 0: args.inner_chunk = args.dict_sz
-    if args.n_aug > 0: 
-        args.samples *= (args.n_aug+1)        # +1 since keep the original as well
-    elif args.dataset != "clevr":
-        args.samples *= 2        # includes horizontal augmentations by default
+    args.samples *= 2        # includes horizontal augmentations by default
     assert args.samples > 0
     return args
 
@@ -127,29 +119,25 @@ def validate_args(args):
 def generate_argparser():
     # Generic
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', choices=['mnist', 'cifar10', 'clevr'], help='dataset to use')
+    parser.add_argument('--dataset', choices=['mnist', 'cifar10'], help='dataset to use')
     parser.add_argument('--dataset-path', required=True, type=str, help='path to dataset (image datasets only)')
     parser.add_argument('--samples', default=50000, type=int, help='number of training samples to use. negative for full dataset')
     parser.add_argument('--test-samples', default=10000, type=int, help='number of training samples to use. negative for full dataset')
-    parser.add_argument('--optim', default='two', choices=['one', 'two', 'laplacian'], help='optimization equation to use from (2), naming follows the equation numbers from that paper. "one" is first deriv., "two" is second deriv.')
+    parser.add_argument('--optim', default='two', choices=['one', 'two'], help='optimization equation to use from (2), naming follows the equation numbers from that paper. "one" is first deriv., "two" is second deriv.')
     parser.add_argument('--sc_only', action='store_true', help='only run sparse coding')
     parser.add_argument('--ckpt_path', default="", type=str, help='path to dataset (image datasets only)')
     parser.add_argument('--load_ckpt', action='store_true', help='load given checkpoint')
     parser.add_argument('--stride', default=1, type=int, help='stride to use when generating patches from images')
-    parser.add_argument('--lap_area_norm', action='store_true', help='use area normalization for the cotan Laplacian')
 
     # Image pre-processor
     parser.add_argument('--patch-sz', default=6, type=int, help='image patch size')
     parser.add_argument('--context-sz', default=3, nargs='+', type=int, help='other patches within this number of pixels is considered a neighbor')
     parser.add_argument('--grayscale_only', action='store_true', help='convert all input images to grayscale')
-    parser.add_argument('--inter_aug_ctx', action='store_true', help='consider all patches in the original and augmented images as in the same context')
-    parser.add_argument('--n_aug', default=-1, type=int, help='number of random augmentations to use')
     parser.add_argument('--zero_whiten_mean', action='store_true', help='zero means before calculating whitening matrix')
     parser.add_argument('--unnorm_embed', action='store_true', help='use unnormalized sparse codings when calculating SMT embeddings for train/test set')
     parser.add_argument('--nonzero_patch_norm', action='store_true', help='prevent any image patches from having a zero-norm (convert them to uniform patch by adding small constant before patch normalization)')
     parser.add_argument('--whiten_tol', default=1e-3, type=float, help='scaling of identity added before whitening')
     parser.add_argument('--disable_whiten', action='store_true', help='do not whiten images')
-    parser.add_argument('--downsample', default=4, type=float, help="fraction to downsample square CLEVR images")
 
     # Dictionary
     parser.add_argument('--dict-path', default="", type=str, help='load/store path for the dictionary')

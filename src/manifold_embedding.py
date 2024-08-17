@@ -56,8 +56,7 @@ class ManifoldEmbedLayer:
         # print(f"\t\tInner condition: {np.linalg.cond(inner):.2E} (min diag: {closed_form.diagonal().min()})", flush=True)
         # print(f"\t\tClosed form condition: {np.linalg.cond(closed_form):.2E} (min diag: {closed_form.diagonal().min()})", flush=True)
         
-        # TODO(as) disable temporarily for laplacian
-        assert args.optim == "laplacian" or _np_is_real_sym(closed_form, verbose=False, tol=1e-1), "Closed form is not (almost) real-symmetric."
+        assert _np_is_real_sym(closed_form, verbose=False, tol=1e-1), "Closed form is not (almost) real-symmetric."
 
         print("\tSolving closed form...", flush=True)
         success = False

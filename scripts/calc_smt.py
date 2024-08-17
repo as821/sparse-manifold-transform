@@ -23,7 +23,6 @@ from diff_op import construct_diff_op
 from util import generate_dset_dict_codes, generate_argparser, validate_args
 from input_output import mmap_csr_cleanup
 from sparse_code import SparseCodeLayer, generate_dict
-from patch_cluster import cluster_patches
 from classifier import test_set_classify
 
 import numpy as np
@@ -93,13 +92,6 @@ def main(args):
     # TODO(as) need to fix checkpointing to support multiple layers (support storage of multiple layers)
     if args.ckpt_path != "": 
         save_ckpt(args, sc_layer, smt_layer)
-
-    if args.vis_dir != "" and args.dataset == "clevr":
-        # run object detection
-        cluster_patches(args, dset, betas)
-
-    if args.dataset != "mnist" and args.dataset != "cifar10":
-        return      # metrics not set up for CLEVR
 
     # Normalize image patches and aggregate into image-level representation
     betas = rearrange(betas, "d (a b c) -> a b c d", a=args.samples, b=dset.n_patch_per_dim, c=dset.n_patch_per_dim, d=args.embed_dim[-1])
