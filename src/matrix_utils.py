@@ -57,8 +57,7 @@ def mx_frac_pow(m, p, tol):
     assert not torch.any(torch.isnan(out)), "Matrix inverse sqrt. is NaN"
     out = out.cpu()
     out = out.to(orig_dtype)
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if torch.cuda.is_available(): torch.cuda.empty_cache()
     return out
 
 def mx_inv_sqrt(m, tol=1e-15):

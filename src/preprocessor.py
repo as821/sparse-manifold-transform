@@ -223,8 +223,7 @@ class ImagePreprocessor():
             self.c_means = rearrange(c_means, "a b c d e -> (a b c) (d e)")
             self.norm = norm.clone()
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
         
         if self.args.vis and vis_enable:
             vis_patches = rearrange(patches.T, "(a b c) (d e) -> a b c d e", a=self.args.samples, c=self.n_patch_per_dim, e=self.n_inp_channels)
@@ -305,7 +304,7 @@ class ImagePreprocessor():
         dev = 'cpu'
         if torch.cuda.is_available():
             pool = pool.to("cuda", non_blocking=True)
-            dev = 'cuda'
+            dev = 'cuda:0'
             torch.cuda.empty_cache()
 
         sz = pool(betas[0].to(dev)).shape[-1]       # pass single image through to get output shape
@@ -323,8 +322,7 @@ class ImagePreprocessor():
         print("\tSlicing...")
         betas = betas[:, :, :sz, :sz]
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
 
         print("\tFlatten...")
         return torch.flatten(betas, start_dim=1)

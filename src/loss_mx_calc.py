@@ -3,7 +3,7 @@ import sys
 import shutil
 import torch
 
-from ctypes_interface import spmm_batched, spgemm_batched_matmul_dop, CSRSerialize, DenseSerialize
+from ctypes_interface import spmm_batched, spgemm_batched_matmul_dop, CSRSerialize, DenseSerialize, c_impl_available
 
 import numpy as np
 import scipy.sparse as sp
@@ -35,7 +35,7 @@ class LossMatrixWorkSlice():
         assert not os.path.exists(out_fname)
         open(out_fname, "wb").close()
 
-        if torch.cuda.is_available():
+        if c_impl_available():
             a_serials = []
             b_serials = []
             shps = []

@@ -6,7 +6,7 @@ import numpy as np
 import scipy.sparse as sp
 from random import randint
 
-from ctypes_interface import spgemm_batched_matmul_c, spmm_batched, DenseSerialize
+from ctypes_interface import spgemm_batched_matmul_c, spmm_batched, DenseSerialize, c_impl_available
 from multiproc import MultiProcessDispatch
 from input_output import mmap_file_init, mmap_file_load_1d
 
@@ -22,7 +22,7 @@ class MatmulWorkSlice:
         b_cache, mmap_path, sym = args
         result = np.zeros(shape=(self.end-self.start, self.n_col))
 
-        if torch.cuda.is_available():
+        if c_impl_available():
             a_serial = self.a.serialize()
             b_serials = []
             for b_chunk in b_cache:

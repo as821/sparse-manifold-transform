@@ -99,9 +99,7 @@ def _general_sparse_coding(args, data, phi, gq_thresh, test=False):
     for i in coo_pkg:
         i.cleanup()
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
+    if torch.cuda.is_available(): torch.cuda.empty_cache()
     return codes
 
 
@@ -206,10 +204,6 @@ def generate_dict(args, x, dict_sz, dict_thresh):
         cand = x[:, shuf[start:end]]
         if torch.cuda.is_available():
             cand = cand.to('cuda:0')
-
-
-        # TODO(as) remove this assumption of unit length vectors...
-
 
         sim = cand.T @ phi
         c_sim = cand.T @ cand

@@ -25,8 +25,7 @@ class ManifoldEmbedLayer:
             self.args = args
             return
     
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
     
         assert alphas.dtype == np.float32
         assert isinstance(alphas, (sci.sparse.csr_array))
@@ -59,15 +58,12 @@ class ManifoldEmbedLayer:
                 evals, evecs = torch.linalg.eigh(torch.from_numpy(closed_form).to('cuda:0'))
                 evals = evals.cpu().numpy()
                 evecs = evecs.cpu().numpy()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                if torch.cuda.is_available(): torch.cuda.empty_cache()
                 success = True    
             except RuntimeError as e:
                 if 'out of memory' not in str(e):
                     raise e
-                else:
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                elif torch.cuda.is_available(): torch.cuda.empty_cache()
         if not success:
             # run on CPU if no GPU or out of VRAM
             if sys.version_info < (3, 11):
@@ -154,8 +150,7 @@ class ManifoldEmbedLayer:
         # self._gen_slice_cache(args, diff_op, batch_sz=args.diff_op_d_chunk, col_slice=True)      # note: chunk sizes swapped compared to alphas cache...
         diff_op_cache, cache_dir = diff_op
 
-        if torch.cuda.is_available(): 
-            torch.cuda.empty_cache()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
 
         calc = LossMatrixCalc(args, alphas, diff_op_cache)
         calc.run(daemon=True)
@@ -164,8 +159,7 @@ class ManifoldEmbedLayer:
         inner = force_symmetric(inner)
         assert _np_is_real_sym(inner, verbose=False)
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
 
         # g = (alphas @ diff_op).todense()
         # gt = g @ alphas.todense().T
