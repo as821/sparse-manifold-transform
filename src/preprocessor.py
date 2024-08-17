@@ -53,7 +53,7 @@ class ImagePreprocessor():
 
         self.whiten_op = None
         self.unwhiten_op = None
-        self.context_sz = args.context_sz[0]
+        self.context_sz = args.context_sz
 
         if train_set:
             self.whiten_op = train_set.whiten_op

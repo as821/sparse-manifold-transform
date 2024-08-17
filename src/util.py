@@ -82,8 +82,8 @@ def _new_process_main(args_path, dset_path, sc_path, label_path, info_path):
         # generate dataset, dictionary, and sparse codes
         dset = generate_dset(args)
         x, img_label = dset.generate_data(args.samples)
-        phi, idx_list = generate_dict(args, x, args.dict_sz[0], args.dict_thresh[0])
-        sc_layer = SparseCodeLayer(args.dict_sz[0], phi, args.gq_thresh[0], idx_list)
+        phi, idx_list = generate_dict(args, x, args.dict_sz, args.dict_thresh)
+        sc_layer = SparseCodeLayer(args.dict_sz, phi, args.gq_thresh[0], idx_list)
         alphas = sc_layer(args, x)
 
 
