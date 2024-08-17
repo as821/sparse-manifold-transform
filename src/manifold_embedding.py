@@ -132,8 +132,6 @@ class ManifoldEmbedLayer:
         inv_sqrt_alpha_cov = mx_inv_sqrt(cov).numpy()
         assert _np_is_real_sym(inv_sqrt_alpha_cov, False, tol=1), "Inv. sqrt. covariance is not (almost) real-symmetric."
         inv_sqrt_alpha_cov = force_symmetric(inv_sqrt_alpha_cov)
-
-        print("Clearing generated slicing caches...", flush=True)
         for k in alphas_T_cache:
             for i in alphas_T_cache[k]:
                 alphas_T_cache[k][i].cleanup()
@@ -168,7 +166,6 @@ class ManifoldEmbedLayer:
         # print("DIFF: ", diff)
         # sys.exit()
             
-        print("Clearing diff. op. slicing cache...", flush=True)
         for k in diff_op_cache:
             diff_op_cache[k].cleanup()
         if cache_dir != "":

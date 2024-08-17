@@ -102,7 +102,7 @@ void scipy_coo_tocsr(struct COO* coo, struct CSR* csr) {
     double diff_2 = (t2_ms - t1_ms) / 1000;
     double diff_3 = (t3_ms - t2_ms) / 1000;
     double diff_4 = (t4_ms - t3_ms) / 1000;
-    printf("\tTimings: %f %f %f %f\n", diff_1, diff_2, diff_3, diff_4);
+    // printf("\tTimings: %f %f %f %f\n", diff_1, diff_2, diff_3, diff_4);
 }
 
 void coo2csr_param(int64_t nrow, int64_t ncol, int64_t nnz,

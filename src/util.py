@@ -121,18 +121,20 @@ def generate_argparser():
     parser.add_argument('--samples', default=50000, type=int, help='number of training samples to use')
     parser.add_argument('--test-samples', default=10000, type=int, help='number of training samples to use')
     parser.add_argument('--optim', default='two', choices=['one', 'two'], help='optimization equation to use from (2), naming follows the equation numbers from that paper. "one" is first deriv., "two" is second deriv.')
+    parser.add_argument('--mmap-path', default="/tmp/smt-memmap", type=str, help='path to store temporary memory map files')
+
 
     # Image pre-processor
     parser.add_argument('--patch-sz', default=6, type=int, help='image patch size')
-    parser.add_argument('--context-sz', default=3, type=int, help='other patches within this number of pixels is considered a neighbor')
+    parser.add_argument('--context-sz', default=32, type=int, help='other patches within this number of pixels is considered a neighbor')
     parser.add_argument('--grayscale_only', action='store_true', help='convert all input images to grayscale')
     parser.add_argument('--whiten_tol', default=1e-3, type=float, help='scaling of identity added before whitening')
 
     # Dictionary
-    parser.add_argument('--dict-sz', default=300, type=int, help='sparse coding dictionary size. should be overcomplete, larger than input data dimension by around 10x')
+    parser.add_argument('--dict-sz', default=8192, type=int, help='sparse coding dictionary size. should be overcomplete, larger than input data dimension by around 10x')
 
     # Sparse-coding
-    parser.add_argument('--gq_thresh', default=1, type=float, help='general sparse coding cosine similarity threshold. set to >= 1 to recover vector quantization')
+    parser.add_argument('--gq_thresh', default=0.3, type=float, help='general sparse coding cosine similarity threshold')
     parser.add_argument('--dict_thresh', default=0.7, type=float, help='sparse coding dictionary element similarity threshold.')
     parser.add_argument('--zero_code_disable', action='store_true', help='ensure that no sparse codes are all zeros (map to nearest dict element if necessary)')
     parser.add_argument('--sc_chunk', default=50, type=int, help='chunk size used when calculating sparse coding')
@@ -154,7 +156,6 @@ def generate_argparser():
     parser.add_argument('--diff_op_d_chunk', default=25, type=int, help='diff op column chunk size used when applying differential operator to alphas (in # of images)')
 
     parser.add_argument('--classify_chunk', default=50, type=int, help='chunk size used when classifying test-set images')
-    parser.add_argument('--mmap-path', default="/tmp/smt-memmap", type=str, help='path to store temporary memory map files')
     parser.add_argument('--proj_row_chunk', default=32, type=int, help='SMT embedding projection rows batch size')
     parser.add_argument('--proj_col_chunk', default=500000, type=int, help='SMT embedding projection columns batch size')  
     parser.add_argument('--proj_cache_proc', default=2, type=int, help='SMT embedding projection matmul cache generation workers')

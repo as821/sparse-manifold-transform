@@ -201,8 +201,6 @@ class LossMatrixCalc(MultiProcessDispatch):
 
     def postprocess_results(self):
         shutil.rmtree(self.alphas_cache_dir)
-
-        print("Clearing transpose slicing cache...", flush=True)
         for k in self.alphas_T_cache:
             for i in self.alphas_T_cache[k]:
                 self.alphas_T_cache[k][i].cleanup()
