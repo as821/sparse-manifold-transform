@@ -39,7 +39,6 @@ class ImagePreprocessor():
         
         data = self.dataset[0][0]
         self.img_sz = data.shape[1]
-        print(f"Image size: {data.shape}")
         if n_channels is not None:
             self.n_inp_channels = n_channels
         elif args.grayscale_only:

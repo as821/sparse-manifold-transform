@@ -190,7 +190,7 @@ def generate_dict(args, x, dict_sz, dict_thresh):
                     break
 
         if ptr == dict_sz:
-            print(f"Found {dict_sz} sufficiently (<={dict_thresh}) unique dictionary elements in {i} / {x.shape[1]} ({i / x.shape[1]}) tries.")
+            print(f"Found {dict_sz} sufficiently (<={dict_thresh}) unique dictionary elements in {i} / {x.shape[1]} ({i / x.shape[1]:0.4f}) tries.")
             break
     assert ptr == dict_sz, f"Unable to find {dict_sz} sufficiently (<={dict_thresh}) unique dictionary elements in the dataset (only found {ptr})."
     pbar.close()

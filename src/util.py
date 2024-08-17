@@ -39,9 +39,9 @@ def generate_dset_dict_codes(args):
     with warnings.catch_warnings():
         warnings.simplefilter(action='ignore', category=FutureWarning)
         img_label = torch.load(label_path, weights_only=False)
-    with open(phi_path, "rb") as file: phi = pickle.load(file)
-    with open(dset_path, "rb") as file: dset = pickle.load(file)
-    with open(info_path, "rb") as file: info = pickle.load(file)
+        with open(phi_path, "rb") as file: phi = pickle.load(file)
+        with open(dset_path, "rb") as file: dset = pickle.load(file)
+        with open(info_path, "rb") as file: info = pickle.load(file)
 
     files = [f for f in os.listdir(args.mmap_path) if os.path.isfile(os.path.join(args.mmap_path, f)) and ".bin" in f]
     assert len(files) == 3, "Unexpected contents in mmap directory! Assumes only .bin files are for the memmory mapped sparse codes."
