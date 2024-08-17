@@ -38,7 +38,7 @@ def generate_dset_dict_codes(args):
     # read results from files
     with warnings.catch_warnings():
         warnings.simplefilter(action='ignore', category=FutureWarning)
-        img_label = torch.load(label_path)
+        img_label = torch.load(label_path, weights_only=False)
     with open(phi_path, "rb") as file: phi = pickle.load(file)
     with open(dset_path, "rb") as file: dset = pickle.load(file)
     with open(info_path, "rb") as file: info = pickle.load(file)
