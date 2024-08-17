@@ -104,7 +104,7 @@ def validate_args(args):
         shutil.rmtree(args.mmap_path)
     os.mkdir(args.mmap_path)
 
-    assert args.dict_sz <= args.embed_dim, f"Cannot have more embedding dimensions ({args.embed_dim}) than dictionary elements ({args.dict_sz})."
+    assert args.embed_dim <= args.dict_sz, f"Cannot have more embedding dimensions ({args.embed_dim}) than dictionary elements ({args.dict_sz})."
     if args.cov_chunk < 0: args.cov_chunk = args.dict_sz
     if args.inner_chunk < 0: args.inner_chunk = args.dict_sz
     
