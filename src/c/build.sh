@@ -1,5 +1,5 @@
 # compile C files into shared library. call from top-level directory of repository
-OPTIM_OPTIONS="-O3 -fno-math-errno -fno-trapping-math -march=native"
+OPTIM_OPTIONS="-O3 -march=native"
 
 NVCC_OPTIONS="-c -g -I./src/c/src -Wno-deprecated-declarations -o"
 nvcc $NVCC_OPTIONS src/c/bin/util.o src/c/src/util.c 
