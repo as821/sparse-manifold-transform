@@ -94,7 +94,7 @@ void file_load_read_buffer(struct FileWrapper* file) {
         // is possible that this happens midway through the file due to some disk issue + then we use a smaller 
         // read buffer for the rest of the file, but that seems unlikely so this is ok for now...
         CHECK(res % file->el_sz == 0)
-        printf("NOTE: downsizing read buffer from %ld to %ld (%ld) for %s\n", bytes, res, res / file->el_sz, file->fname);
+        // printf("NOTE: downsizing read buffer from %ld to %ld (%ld) for %s\n", bytes, res, res / file->el_sz, file->fname);
         file->max_buf = res;
     }
     file->buf_idx = 0;

@@ -128,9 +128,9 @@ class ManifoldEmbedLayer:
         assert _np_is_real_sym(cov, verbose=False)
         cov = torch.from_numpy(cov)       # No (useful) sparse eigen-solvers give all eigenvalues and this is a (dict_sz x dict_sz) covariance matrix (which tend to be dense)
         
-        print("\tCalculating inv. sqrt. cov. matrix...", flush=True)    
+        print("Calculating inv. sqrt. cov. matrix...", flush=True)    
         inv_sqrt_alpha_cov = mx_inv_sqrt(cov).numpy()
-        assert _np_is_real_sym(inv_sqrt_alpha_cov, True, tol=1), "Inv. sqrt. covariance is not (almost) real-symmetric."
+        assert _np_is_real_sym(inv_sqrt_alpha_cov, False, tol=1), "Inv. sqrt. covariance is not (almost) real-symmetric."
         inv_sqrt_alpha_cov = force_symmetric(inv_sqrt_alpha_cov)
 
         print("Clearing generated slicing caches...", flush=True)

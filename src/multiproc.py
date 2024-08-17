@@ -74,14 +74,13 @@ class MultiProcessDispatch():
         res_q = ctx.Queue()
         work_q = ctx.Queue(maxsize=self.work_q_len())      # not unbounded, otherwise main process may load entire a matrix into memmory (in chunks)
         work_done = ctx.Event()
-        init_args = self.worker_init_args()
         proc = self._kickoff_workers(ctx, work_q, res_q, work_done, offset, init_args, daemon, n_proc)
 
         # Parcel out work to workers, one batch at a time
         if not self.fast_work_gen():
             pbar = tqdm(total=self.get_nbatch())    
         n_work_left = 0
-        for idx in tqdm(range(self.get_nbatch())):
+        for idx in range(self.get_nbatch()):
             work = self.generate_work(idx)
             if isinstance(work, (list)):
                 for w in work:
@@ -117,7 +116,6 @@ class MultiProcessDispatch():
         pbar.close()
 
         # Clean up worker processes
-        print("\tWaiting for workers to terminate...", flush=True)
         for p in proc:
             p.join()
             assert p.exitcode == 0, f"Worker process failed with error code: {p.exitcode}"
