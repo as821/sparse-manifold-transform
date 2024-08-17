@@ -45,12 +45,6 @@ class ManifoldEmbedLayer:
 
         print("\tGenerating closed form formulation...", flush=True)
         print(f"Inner row norm error: {np.abs(np.sum(inner, axis=0)).max()}")
-        if args.inner_renorm:
-            # Renormalizes inner matrix along its rows to account for accumulated numerical error
-            # This is an imperfect solution (but it should help)
-            
-            inner -= np.eye(inner.shape[0]) * np.sum(inner, axis=0)
-            print(f"Inner row norm error (post): {np.abs(np.sum(inner, axis=0)).max()}")
 
         closed_form = inv_sqrt_alpha_cov @ inner @ inv_sqrt_alpha_cov
         # print(f"\t\tInner condition: {np.linalg.cond(inner):.2E} (min diag: {closed_form.diagonal().min()})", flush=True)

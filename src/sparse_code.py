@@ -134,19 +134,11 @@ class SparseWorkSlice():
             ind = torch.arange(0, amax.shape[0])
             cosine_sim[amax, ind] = self.thresh   
 
-        if args.abs_cos_sim:
-            cosine_sim = cosine_sim.abs()
         running = profile_log(profile, running, "misc")
 
-
-        if args.variable_sc:
-            # any values < threshold set to zero, values >= threshold use their cosine similarity
-            codes = cosine_sim.clone()
-            codes[cosine_sim < self.thresh] = 0
-        else:
-            # only contains 0/1 entries
-            codes = torch.zeros_like(cosine_sim)
-            codes[cosine_sim >= self.thresh] = 1
+        # only contains 0/1 entries
+        codes = torch.zeros_like(cosine_sim)
+        codes[cosine_sim >= self.thresh] = 1
 
         running = profile_log(profile, running, "set one")
 
@@ -240,8 +232,6 @@ def generate_dict(args, x, dict_sz, dict_thresh):
         for i in range(start, end):
             c_idx = i - start
             slc = sim[c_idx, :]
-            if args.abs_cos_sim:
-                slc = slc.abs()
             if not torch.any(slc > dict_thresh):
                 # mx = sim[c_idx, :].max()
                 # mn = sim[c_idx, :].min()
@@ -251,8 +241,6 @@ def generate_dict(args, x, dict_sz, dict_thresh):
                     t = torch.tensor(c_added_idx)
 
                     slc = c_sim[c_idx, t]
-                    if args.abs_cos_sim:
-                        slc = slc.abs()
                     if torch.any(slc > dict_thresh).item():
                         continue
                     # mx = max(mx, c_sim[c_idx, t].max())

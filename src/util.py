@@ -150,10 +150,8 @@ def generate_argparser():
     parser.add_argument('--dict_thresh', default=0.7, nargs='+', type=float, help='sparse coding dictionary element similarity threshold.')
     parser.add_argument('--disable_sc_norm', action='store_true', help='do not normalize sparse codes to sum to 1')
     parser.add_argument('--zero_code_disable', action='store_true', help='ensure that no sparse codes are all zeros (map to nearest dict element if necessary)')
-    parser.add_argument('--abs_cos_sim', action='store_true', help='use absolute value of cosine sim. during sparse coding')
     parser.add_argument('--sc_chunk', default=50, type=int, help='chunk size used when calculating sparse coding')
     parser.add_argument('--sc_only_normalize', action='store_true', help='L2 normalize sparse codes when using sc_only flag')
-    parser.add_argument('--variable_sc', action='store_true', help='sparse codes greater than the GQ threshold are set to their cosine similarity rather than to 1')
 
     # SMT Embedding
     parser.add_argument('--embed-dim', default=384, nargs='+', type=int, help='feature manifold dimension (patch embedding dimension, image-level embedding will be much larger)')
@@ -180,9 +178,5 @@ def generate_argparser():
     # Debugging
     parser.add_argument('--vis-dir', default="", type=str, help='path to store visualizations to')
     parser.add_argument('--vis', action='store_true', help='flag to create visualization')
-    parser.add_argument('--inner_renorm', action='store_true', help='renormalize the rows of the "inner" matrix to account for numerical errors in matrix multiplication')
 
-    # object clustering
-    parser.add_argument('--n_obj', default=5, type=int, help='number of clusters')
-    parser.add_argument('--depatchify', default='center', choices=['avg', 'center'], help='patch -> pixel representation strategy')
     return parser

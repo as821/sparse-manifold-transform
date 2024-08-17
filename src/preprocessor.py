@@ -128,27 +128,6 @@ class ImagePreprocessor():
         self.whiten_op = mx_frac_pow(cov_mx, -1/2, tol)
         self.unwhiten_op = mx_frac_pow(cov_mx, 1/2, tol)
 
-    def de_patchify(self, betas):
-        # convert embeddings of patchified image back into per-pixel embeddings
-        assert self.arg.stride == 1, "might work without this, but havent tested yet"
-        out = np.zeros(shape=(betas.shape[0], self.img_sz, self.img_sz))
-        if self.args.depatchify == "avg":
-            # takes average of the embeddings of each patch that includes this pixel
-            cnt = np.zeros(shape=(1, self.img_sz, self.img_sz))
-            for idx in range(self.n_patch_per_dim):
-                for jdx in range(self.n_patch_per_dim):
-                    # add embedding of this patch to every pixel in the patch
-                    p = betas[:, idx * self.n_patch_per_dim + jdx][:, None, None].repeat(self.args.patch_sz, axis=1).repeat(self.args.patch_sz, axis=2)
-                    out[:, idx:idx+self.args.patch_sz, jdx:jdx+self.args.patch_sz] += p
-                    cnt[:, idx:idx+self.args.patch_sz, jdx:jdx+self.args.patch_sz] += 1
-            out /= cnt
-            out = out.reshape(out.shape[0], out.shape[1] * out.shape[2])        # flatten pixels back to 2D
-        elif self.args.depatchify == "center":
-            out = betas
-        else:
-            raise NotImplementedError
-        return out
-
     def train_set_image(self, idx):
         # default to using original + horizontal augmented images
         # alternate between "normal" and augmented datasets 
