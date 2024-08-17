@@ -61,37 +61,17 @@ def _general_sparse_coding(args, data, phi, gq_thresh, test=False):
         assert data.shape[1] % args.samples == 0, "Assumes that all images have the same number of image patches"
         n_patch_per_img = data.shape[1] // args.samples
         samples = args.samples
-    print(f"SC using # patch per image: {n_patch_per_img}, data shape: ({data.shape[0]}, {data.shape[1]}), # samples: {samples}")
+    # print(f"SC using # patch per image: {n_patch_per_img}, data shape: ({data.shape[0]}, {data.shape[1]}), # samples: {samples}")
 
     if torch.cuda.is_available():
         phi = phi.to(f'cuda:0', non_blocking=True)
-    running_stats = np.zeros(shape=8, dtype=np.float64)
-    # dict_el_sum = np.zeros(shape=phi.shape[1], dtype=np.float64)
-    niter = 0
 
     batch_sz = args.sc_chunk
     for start in tqdm(range(0, samples, batch_sz)):
         end = min(start + batch_sz, samples)
         batch = data[:, start*n_patch_per_img : end*n_patch_per_img]
-        result, stats, tmp_dict_el_sum = SparseWorkSlice(batch, test, gq_thresh, start * n_patch_per_img).process(args, 0, phi)
+        result = SparseWorkSlice(batch, test, gq_thresh, start * n_patch_per_img).process(args, 0, phi)
         coo_pkg = _coo_update_file(*coo_pkg, result)
-        stats[2] = (end-start)*n_patch_per_img
-        running_stats[:stats.shape[0]] += stats
-        # dict_el_sum += tmp_dict_el_sum
-        running_stats[-1] += n_patch_per_img
-        niter += 1
-
-    # Process running statistics
-    avg_n_dict_el = running_stats[0] / running_stats[1]     # excludes zero-codes
-    avg_n_dict_el_zc = running_stats[0] / running_stats[2]  # include zero codes in normalization
-    perc_zero = (running_stats[2] - running_stats[1]) / running_stats[2]
-    avg_enc = running_stats[3] / running_stats[4]
-    tot_avg_enc = running_stats[5] / running_stats[2]
-    avg_sim = running_stats[6] / running_stats[4]
-    print("Avg. encoding sz: {:.3f} ({:.3f}) ({:.5f}, {}, {}, {}), avg. similarity: {:.5f} ({:.5f}, {:.5f})".format(avg_n_dict_el, avg_n_dict_el_zc, perc_zero, running_stats[2] - running_stats[1], running_stats[2], running_stats[-1], avg_enc, tot_avg_enc, avg_sim))
-    # # NOTE: Var(cX) = c^2 Var(X)
-    # out_el_sum = (dict_el_sum / dict_el_sum.sum()) * 100
-    # print("\t dict el: ({:.5f}, {:.5f}, {:.5f}, {:.5f})".format(out_el_sum.min(), out_el_sum.max(), out_el_sum.mean(), out_el_sum.var()))
 
     print("Generating mmap-backed CSR matrix through COO construction...", flush=True)
     d, r, c = coo_pkg[0].get_mmap(), coo_pkg[1].get_mmap(), coo_pkg[2].get_mmap()
@@ -116,15 +96,12 @@ class SparseWorkSlice():
         running = time()
         running = profile_log(profile, running, "start")
         
-
         if torch.cuda.is_available() and gpu_idx >= 0:
             self.batch = self.batch.to(f'cuda:{gpu_idx}', non_blocking=True)
 
         # Data and phi are both L2 normalized, so their cosine similarity is their dot product
         cosine_sim = phi.T @ self.batch
         running = profile_log(profile, running, "matmul")
-
-        tot_avg_sim = cosine_sim.sum() / phi.shape[0]
 
         # Ensure that each data point has at least 1 entry >= thresh (when applicable)
         if self.test or args.zero_code_disable:
@@ -140,30 +117,12 @@ class SparseWorkSlice():
 
         running = profile_log(profile, running, "set one")
 
-        # note: this logging is slow compared to everything else here, but leave it enabled since its kinda useful
-        # dict_el_sum = codes.sum(axis=1).to("cpu", non_blocking=True)
-        avg_sim = cosine_sim[codes > 0].sum().to("cpu", non_blocking=True)
-        running = profile_log(profile, running, "logging (0)")
-        
         col_sums = codes.sum(axis=0)
         ind = col_sums > 0
         running = profile_log(profile, running, "sum")
 
-        avg_norm = col_sums.sum().to("cpu", non_blocking=True)
-        n_nonzero = col_sums[ind].shape[0]
-        running = profile_log(profile, running, "logging (0.5)")
-
-        if not args.disable_sc_norm:
-            codes[:, ind] /= col_sums[ind]
-        running = profile_log(profile, running, "norm")
-
-        # track some basic stats
-        avg_enc = codes[codes > 0]
-        avg_enc_cnt = avg_enc.shape[0]
-        avg_enc = avg_enc.sum()     # of the dictionary elements used in encoding, what is the average cosine similarity to that element
-        
-        running = profile_log(profile, running, "logging (1)")
         if torch.cuda.is_available():
+            # performs dense -> COO conversion on the GPU
             res = cp.sparse.coo_matrix(cp.asarray(codes)).get()
         else:
             res = sp.coo_array(codes.cpu().numpy())
@@ -174,8 +133,7 @@ class SparseWorkSlice():
         assert res.row.dtype == res.col.dtype and res.row.dtype ==  np.int64, "Need large index dtypes to support very large datasets."
         running = profile_log(profile, running, "dtype + offset")
 
-        # return res, torch.tensor([avg_norm, n_nonzero, 0, avg_enc, avg_enc_cnt, tot_avg_sim, avg_sim]).numpy(), dict_el_sum.numpy()
-        return res, torch.tensor([avg_norm, n_nonzero, 0, avg_enc, avg_enc_cnt, tot_avg_sim, avg_sim]).numpy(), None
+        return res
 
 
 

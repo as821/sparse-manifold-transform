@@ -62,11 +62,6 @@ if __name__ == "__main__":
     os.environ["NUMPY_MADVISE_HUGEPAGE"] = "1"
 
     args = validate_args(generate_argparser().parse_args())
-
-    if args.vis_dir != "" and os.path.exists(args.vis_dir):
-        shutil.rmtree(args.vis_dir)
-        os.mkdir(args.vis_dir)
-
     with torch.no_grad():
         main(args)
     print("Done")

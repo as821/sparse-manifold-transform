@@ -135,11 +135,9 @@ class ImagePreprocessor():
         return sample
 
 
-    def generate_data(self, n_samples, vis_enable=True, test=False):
+    def generate_data(self, n_samples, test=False):
         """Generate (and patch-ify) given number of samples from the MNIST dataset"""
         print("Patch-ifying images...", flush=True)
-        if n_samples != self.args.samples:
-            vis_enable = False  # do not visualize test set
         patches = torch.zeros(size=(n_samples, self.n_patch_per_dim, self.n_patch_per_dim, self.args.patch_sz**2, self.n_inp_channels), dtype=torch.float32)
         if self.n_class > 0:
             labels = torch.zeros(size=(n_samples, 1), dtype=torch.from_numpy(np.empty(shape=(1,), dtype=np.min_scalar_type(-1 * self.n_class))).dtype)  # get min. scalar type needed for labels
@@ -181,102 +179,23 @@ class ImagePreprocessor():
             patches[idx] = res.permute((2, 3, 0, 1)).to("cpu")
         del conv, sample, res
 
-        vis_idx = 0
-        if self.args.vis and vis_enable:
-            vis_patches = rearrange(patches[vis_idx], "a b (c d) e -> (a b) c d e", c=self.args.patch_sz, d=self.args.patch_sz, e=self.n_inp_channels)
-            self._patches_vis(vis_patches, n_col=self.n_patch_per_dim)
-
-        if self.args.vis_dir != '':
-            self.patch_cpy = patches.clone()
-            
-            flt = rearrange(patches, "a b c d e -> (a b c d) e")
-            self.mx = torch.max(flt, dim=0)[0]
-            self.mn = torch.min(flt, dim=0)[0]
-
         # Remove the contextual mean from each patch (centering before whitening)
         print("Calculating contextual patch means...", flush=True)
         c_means = self._context_mean(patches)
         patches = patches - c_means
-
-        if self.args.vis and vis_enable:
-            vis_patches = rearrange(patches[vis_idx], "a b (c d) e -> (a b) c d e", c=self.args.patch_sz)
-            self._patches_vis(vis_patches, n_col=self.n_patch_per_dim)
 
         # Calculate whitening operator + apply it
         print("Calculating and applying whitening operator to all patches...", flush=True)
         patches = rearrange(patches, "a b c d e -> (a b c) (d e)")
         self._calc_whitening(patches)
         patches = patches.T
-        patches = self.whiten_op @ patches
-
-        if self.args.vis and vis_enable:
-            vis_patches = rearrange(patches.T, "(a b c) (d e) -> a b c d e", a=n_samples, c=self.n_patch_per_dim, e=self.n_inp_channels)
-            vis_patches = rearrange(vis_patches[vis_idx], "a b (c d) e -> (a b) c d e", c=self.args.patch_sz)
-            self._patches_vis(vis_patches, n_col=self.n_patch_per_dim)        
-
-        if self.args.nonzero_patch_norm: patches += 1e-20          # do not allow any patch to have a zero norm representation
+        patches = self.whiten_op @ patches 
+        patches += 1e-20          # do not allow any patch to have a zero norm representation
         norm = torch.linalg.vector_norm(patches, ord=2, dim=0)
-        if not self.args.nonzero_patch_norm: norm += 1e-20         # prevent div. by zero
         patches /= norm
-        
-        if self.args.vis_dir != '' or True:
-            self.c_means = rearrange(c_means, "a b c d e -> (a b c) (d e)")
-            self.norm = norm.clone()
 
         if torch.cuda.is_available(): torch.cuda.empty_cache()
-        
-        if self.args.vis and vis_enable:
-            vis_patches = rearrange(patches.T, "(a b c) (d e) -> a b c d e", a=self.args.samples, c=self.n_patch_per_dim, e=self.n_inp_channels)
-            vis_patches = rearrange(vis_patches[vis_idx], "a b (c d) e -> (a b) c d e", c=self.args.patch_sz)
-            self._patches_vis(vis_patches, n_col=self.n_patch_per_dim)
-
-            vis_norm = rearrange(norm, "(a b c d) -> a b c d", a=self.args.samples, c=self.n_patch_per_dim, d=1)
-            self._patches_vis(vis_norm[vis_idx].unsqueeze(0), n_col=self.n_patch_per_dim, full_vis=True)
         return patches, labels
-
-    def _patches_vis(self, orig_patches, n_col=3, title='', subplot_titles=False, full_vis=False):
-        """Create a figure to display the image patches
-        Assumes patches is a (N, k, k, c) tensor where N is the number of patches to display, k is the patch size, and c is the number of channels. """
-        assert len(orig_patches.shape) == 4 and orig_patches.shape[1] == orig_patches.shape[2], "Patches do not assumed precondition shape. Visualization will not do what you think it will."
-
-        # Scale input to [0, 1] range (for visualization only)
-        mx = torch.amax(orig_patches, dim=(0, 1, 2), keepdim=True)
-        mn = torch.amin(orig_patches, dim=(0, 1, 2), keepdim=True)
-        if torch.any(mn < 0) or torch.any(mx > 1):
-            patches = (orig_patches - mn) / (mx - mn)       # TODO(as) should really only adjust channels that need adjusting, but still...
-            print(f"NOTE: visualization renormalizing with min ({mn}) and max ({mx})")
-        else:
-            patches = orig_patches
-
-        if full_vis:
-            if torch.any(mx <= 1) and torch.any(0 <= mx) and torch.any(mn <= 1) and torch.any(0 <= mn):
-                patches = orig_patches      # do not rescale if unnecessary
-            # patches = rearrange(patches, "(a b) c d e -> a b (c d e)", a=n_col)
-            patches = patches.squeeze().unsqueeze(-1)
-            # if patches.shape[-1] != 1:
-            #     patches = patches.permute((2, 0, 1))
-            plt.imshow(patches)
-            return
-
-        num_cols = n_col
-        num_rows = int(math.ceil(patches.shape[0] / num_cols))
-        _, axes = plt.subplots(num_rows, num_cols, figsize=(12, 8))
-        axes = axes.ravel()
-        for i in range(patches.shape[0]):
-            axes[i].imshow(patches[i]) #, cmap='gray')
-            if subplot_titles:
-                axes[i].set_title(f'Index {i}')
-        for i in range(num_cols * num_rows):
-            axes[i].axis('off')
-        plt.subplots_adjust(wspace=0.1, hspace=0.25)
-        if title != '':
-            plt.suptitle(title)
-        
-        if self.args.vis_dir != '':
-            plt.savefig(self.args.vis_dir + "/" + str(int(time.time())))
-            plt.close()
-        else:
-            plt.show()
 
     def get_context_pairs(self, context_sz):
         """Return the set of all patch context pairs for a single image in this dataset."""
@@ -296,7 +215,6 @@ class ImagePreprocessor():
 
     def aggregate_image_embed(betas, ks=4, stride=2):
         """Aggregate patch-level embeddings into image-level embeddings for each image, following procedure outlined by (2)"""
-        # Apply average pooling
         print("Aggregating image embeddings...")
         betas = torch.from_numpy(betas).permute((0, 3, 1, 2))
 
@@ -309,52 +227,18 @@ class ImagePreprocessor():
 
         sz = pool(betas[0].to(dev)).shape[-1]       # pass single image through to get output shape
 
-
-        chnk_sz = 50 # 1000
+        chnk_sz = 50
         for start in tqdm(range(0, betas.shape[0], chnk_sz)):
             end = min(start + chnk_sz, betas.shape[0])
-            chnk = pool(betas[start:end].to(dev)) #.permute((0, 2, 3, 1))
+            chnk = pool(betas[start:end].to(dev))
             
             # Apply "point-wise L2 normalization" (L2 normalize each aggregated patch of each image)
             chnk /= (torch.linalg.vector_norm(chnk, ord=2, dim=1, keepdim=True) + 1e-20)
             betas[start:end, :, :sz, :sz] = chnk.cpu()
 
-        print("\tSlicing...")
         betas = betas[:, :, :sz, :sz]
-
         if torch.cuda.is_available(): torch.cuda.empty_cache()
-
-        print("\tFlatten...")
         return torch.flatten(betas, start_dim=1)
-
-    def preproc_to_orig(self, idx, patch):
-        patch = self.preproc_to_orig_no_rescale(idx, patch)
-        
-        # rescale to 0/1
-        mn = patch.min()
-        if mn < 0:
-            patch -= mn
-        
-        mx = patch.max()
-        mn = patch.min()
-        if mx > 1:
-            # keep min the same, but rescale so less than 1
-            rescale = (mx - mn) / (1 - mn)
-            patch = ((patch - mn) / rescale) + mn
-
-        return patch
-
-
-    def preproc_to_orig_no_rescale(self, idx, patch):
-        if self.args.vis_dir == "":
-            return None
-        
-        # undo all preprocessing steps to get a patch we can visualize
-        patch *= self.norm[idx]
-        patch = self.unwhiten_op @ patch
-        patch += self.c_means[idx]
-        return patch
-
 
 def _context(x, y, n_patches, context_sz):
     """Given the index of a patch in the image, return the indices of its neighbors (context). DOES NOT include the given index."""

@@ -123,8 +123,6 @@ def generate_argparser():
     parser.add_argument('--patch-sz', default=6, type=int, help='image patch size')
     parser.add_argument('--context-sz', default=3, type=int, help='other patches within this number of pixels is considered a neighbor')
     parser.add_argument('--grayscale_only', action='store_true', help='convert all input images to grayscale')
-    parser.add_argument('--unnorm_embed', action='store_true', help='use unnormalized sparse codings when calculating SMT embeddings for train/test set')
-    parser.add_argument('--nonzero_patch_norm', action='store_true', help='prevent any image patches from having a zero-norm (convert them to uniform patch by adding small constant before patch normalization)')
     parser.add_argument('--whiten_tol', default=1e-3, type=float, help='scaling of identity added before whitening')
 
     # Dictionary
@@ -133,7 +131,6 @@ def generate_argparser():
     # Sparse-coding
     parser.add_argument('--gq_thresh', default=1, type=float, help='general sparse coding cosine similarity threshold. set to >= 1 to recover vector quantization')
     parser.add_argument('--dict_thresh', default=0.7, type=float, help='sparse coding dictionary element similarity threshold.')
-    parser.add_argument('--disable_sc_norm', action='store_true', help='do not normalize sparse codes to sum to 1')
     parser.add_argument('--zero_code_disable', action='store_true', help='ensure that no sparse codes are all zeros (map to nearest dict element if necessary)')
     parser.add_argument('--sc_chunk', default=50, type=int, help='chunk size used when calculating sparse coding')
 
@@ -158,9 +155,5 @@ def generate_argparser():
     parser.add_argument('--proj_row_chunk', default=32, type=int, help='SMT embedding projection rows batch size')
     parser.add_argument('--proj_col_chunk', default=500000, type=int, help='SMT embedding projection columns batch size')  
     parser.add_argument('--proj_cache_proc', default=2, type=int, help='SMT embedding projection matmul cache generation workers')
-
-    # Debugging
-    parser.add_argument('--vis-dir', default="", type=str, help='path to store visualizations to')
-    parser.add_argument('--vis', action='store_true', help='flag to create visualization')
 
     return parser
