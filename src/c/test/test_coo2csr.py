@@ -51,7 +51,7 @@ def csr_alloc(coo):
 
 def main():
     # Create sparse test matrices
-    a_shp = (200000, 10000)
+    a_shp = (20000, 1000)
     a = rand_coo(a_shp)
 
 
