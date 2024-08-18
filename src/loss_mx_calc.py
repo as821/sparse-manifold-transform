@@ -71,7 +71,10 @@ class LossMatrixWorkSlice():
                 b_serial_k = []
                 for b_row_slice in alphas_T_cache:
                     ks = sorted(list(alphas_T_cache[b_row_slice].keys()))          # process columns in order
-                    b_serials.append(alphas_T_cache[b_row_slice][ks[didx]].serialize())
+                    b_slice = alphas_T_cache[b_row_slice][ks[didx]]
+                    if b_slice.end <= self.row_range[0]:            # ADD^TA^T is symmetric
+                        continue                    
+                    b_serials.append(b_slice.serialize())
                     b_serial_k.append(b_row_slice)
                 
                 # calc all matmuls that include this dop cache entry
@@ -112,6 +115,8 @@ class LossMatrixWorkSlice():
                 for d, b in zip(dop, ks):
                     a_slice = d.T
                     b_slice = alphas_T_cache[b_row_slice][b]
+                    if b_slice.end <= self.row_range[0]:            # ADD^TA^T is symmetric
+                        continue
                     result[:, b_start:b_end] += (b_slice.get().todense() @ a_slice).T
 
         with open(out_fname, 'ab') as fid:
@@ -172,7 +177,6 @@ class LossMatrixCalc(MultiProcessDispatch):
         for k in ks:
             # NOTE: same output dimensions, but prunes the internal dimension of the matmul to only cover the nonzero elements of the second operand
             entry = self.diff_op_cache[k]
-            # a_slc = alphas_slice[:, entry.col_start:(entry.col_end+1)]      # +1 since if only have one nonzero row, col_start==col_end and then this is an empty slice
             a_slc = alphas_slice[:, entry.col_start:entry.col_end]
 
             # tst = entry.get()
