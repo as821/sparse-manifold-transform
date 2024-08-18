@@ -36,11 +36,6 @@ struct CSR {
 
 
 void scipy_coo_tocsr(struct COO* coo, struct CSR* csr) {
-    // TODO(as) 
-    //      - improve mmap handling (perhaps process in chunks + handle files directly?)
-    //      - multithreading
-
-
     struct timeval start, t1, t2, t3, t4;
     gettimeofday(&start, NULL);
 

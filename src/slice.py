@@ -127,7 +127,7 @@ class SliceCacheWorkSlice():
 
 def _matmul_cache_gen_worker(w_q, r_q, w_done, idx, worker_init_args):
     # Load alphas mmap into the worker
-    data_pkg, indptr_pkg, indices_pkg, dtype, shape, a, m = worker_init_args        # TODO(as) fix this...
+    data_pkg, indptr_pkg, indices_pkg, dtype, shape, a, m = worker_init_args
     data = np.memmap(data_pkg[0], dtype=data_pkg[1], mode="r", shape=data_pkg[2])
     indptr = np.memmap(indptr_pkg[0], dtype=indptr_pkg[1], mode="r", shape=indptr_pkg[2])
     indices = np.memmap(indices_pkg[0], dtype=indices_pkg[1], mode="r", shape=indices_pkg[2])

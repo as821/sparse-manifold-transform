@@ -42,9 +42,6 @@ def _coo_init(mmap_path, shape):
 def _general_sparse_coding(args, data, phi, gq_thresh, test=False):
     """Implement k-sparse coding for the given data and dictionary."""
     print("Calculating sparse codes...", flush=True)
-
-    # TODO(as) if this is all too slow, then should come up with a way to build CSR matrix while generating sparse codes (likely involving C optim. too)
-
     coo_pkg = _coo_init(args.mmap_path, (phi.shape[1], data.shape[1]))
 
     assert phi.shape[1] < np.iinfo(np.int64).max

@@ -33,7 +33,7 @@ class DiffOpAssembly():
         self.out_shape = (self.n_patch_per_img * self.args.samples, self.n_patch_per_img * self.args.samples)
         
         # tmp buffering for each slice, as well as output cache
-        self.tmp_data_file = Buffer(np.float32, max_sz)     # TODO(as) can reduce max_sz to just account for the size of each slice (block-diagonal so will have regular structure)
+        self.tmp_data_file = Buffer(np.float32, max_sz)
         self.tmp_indices_file = Buffer(np.int32, max_sz)
         self.tmp_indptr_file = Buffer(np.int32, max_sz)
         self.out_slice_cache = {}
@@ -131,7 +131,7 @@ class DiffOpAssembly():
             nnz_row_end = slc_end
 
             # cache object expected during matmul
-            shp = (slc_end - slc_start, nnz_row_end - nnz_row_start)        # TODO(as) +1 really isnt right here...
+            shp = (slc_end - slc_start, nnz_row_end - nnz_row_start)
             self.out_slice_cache[(slc_start, slc_end)] = SliceCacheEntry_Array(self.cache_dir, slc_start, slc_end, out_data, out_indices, out_indptr, shp, nnz_row_start, nnz_row_end)
             running = profile_log(profile, running, f"cache")
 

@@ -197,9 +197,6 @@ class ManifoldEmbedLayer:
         
         # L2 normalizes embeddings as in (2)
         print("Normalizing SMT embeddings...", flush=True)
-
-        # TODO(as) trivial to do a better version of this in C. For now, just chunk across embedding array so doesnt use so much RAM at once
-        # (accumulator array, iterate through rows of CSR summing squared entries, sqrt, iterate through CSR entries again dividing appropriately)
         chnk_sz = int(beta_flat.shape[1] / 10)
         for start in tqdm(range(0, beta_flat.shape[1], chnk_sz)):
             end = min(beta_flat.shape[1], start + chnk_sz)

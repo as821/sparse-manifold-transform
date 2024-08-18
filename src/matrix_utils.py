@@ -34,7 +34,6 @@ def mx_frac_pow(m, p, tol):
     m = m.cpu()
 
     # invert any negative e'val/e'vec
-    # TODO(as) really shouldnt need this...
     neg_mask = evals < 0
     evecs[:, neg_mask] = evecs[:, neg_mask] * -1
     evals = torch.abs(evals)

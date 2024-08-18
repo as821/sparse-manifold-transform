@@ -135,10 +135,7 @@ int cuda_spgemm_sparse_result_alg3(struct CUDA_spgemm_context* ctx, struct CSR* 
     // destroy matrix/vector descriptors
     CHECK_CUSPARSE(cusparseSpGEMM_destroyDescr(spgemmDesc))
     CHECK_CUSPARSE(cusparseDestroySpMat(matB))
-    if(b->buf && !stream) {    // handles if GPU memory backing b was allocated as one chunk or as multiple allocations
-        
-        // TODO(as) actually we cant do this here if we want graph capture to work....
-            
+    if(b->buf && !stream) {    // handles if GPU memory backing b was allocated as one chunk or as multiple allocations            
         CHECK_CUDA(cudaFree(b->buf))
         b->buf = NULL;
     }
@@ -268,10 +265,7 @@ int cuda_spgemm_sparse_result(struct CUDA_spgemm_context* ctx, struct CSR* a, st
     // destroy matrix/vector descriptors
     CHECK_CUSPARSE(cusparseSpGEMM_destroyDescr(spgemmDesc))
     CHECK_CUSPARSE(cusparseDestroySpMat(matB))
-    if(b->buf && !stream) {    // handles if GPU memory backing b was allocated as one chunk or as multiple allocations
-        
-        // TODO(as) actually we cant do this here if we want graph capture to work....
-            
+    if(b->buf && !stream) {    // handles if GPU memory backing b was allocated as one chunk or as multiple allocations            
         CHECK_CUDA(cudaFree(b->buf))
         b->buf = NULL;
     }
@@ -326,7 +320,7 @@ int cuda_spgemm_dense_result(struct CUDA_spgemm_context* ctx, struct CSR* a, str
     cusparseDnMatDescr_t matD;
     size_t bufferSize = 0;
     *dense_bytes = a->nrow * b->ncol * sizeof(float);
-    ssize_t ld = b->ncol;       // TODO(as) "leading dimension", a bit sketch but this is how the example does it...
+    ssize_t ld = b->ncol;
     CHECK_CUDA(cudaMalloc((void**) d_dense, *dense_bytes))
     CHECK_CUSPARSE(cusparseCreateDnMat(&matD, a->nrow, b->ncol, ld, *d_dense, CUDA_R_32F, CUSPARSE_ORDER_ROW))
     

@@ -179,11 +179,6 @@ class LossMatrixCalc(MultiProcessDispatch):
             entry = self.diff_op_cache[k]
             a_slc = alphas_slice[:, entry.col_start:entry.col_end]
 
-            # tst = entry.get()
-            # full = alphas_slice @ tst     # TODO(as) for this to work, need to disable column slicing in SliceCacheWorkSlice::process
-            # less = alphas_slice[:, entry.col_start:entry.col_end] @ tst[entry.col_start:entry.col_end, :]
-            # assert np.all(full.todense() == less.todense())
-
             assert a_slc.indices.dtype == np.int32 and a_slc.indptr.dtype == np.int32
             fname = self.alphas_cache_dir + f"/sparse_dop_aslice_{start}_{k[0]}_{k[1]}.bin"
             mmap_unified_write(fname, (a_slc.data, a_slc.indices, a_slc.indptr))

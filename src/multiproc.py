@@ -107,7 +107,7 @@ class MultiProcessDispatch():
         # Wait for remaining work to complete
         while n_work_left > 0:
             try:
-                res = res_q.get(block=True, timeout=0.5)        # TODO(as) this shouldn't be needed, but sometimes it hangs at the end...
+                res = res_q.get(block=True, timeout=0.5)
             except Empty:
                 continue
             self.process_result(res)

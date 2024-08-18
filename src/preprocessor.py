@@ -67,7 +67,7 @@ class ImagePreprocessor():
         resource.setrlimit(resource.RLIMIT_NOFILE, (65536*16, 65536*16))
 
     def _context_mean(self, patches):
-        """Calculate mean of context patches for each patch in each image. TODO: sliding window?"""
+        """Calculate mean of context patches for each patch in each image."""
 
         # Setup padding so get a contextual mean for each patch location in the image
         conv = torch.nn.Conv2d(in_channels=self.input_patch_dim,

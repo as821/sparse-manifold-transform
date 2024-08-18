@@ -129,7 +129,7 @@ class GpuSparseMatmul(MultiProcessDispatch):
             # NOTE: self.a is a dense matrix, effectively does the same thing here as 2D alphas slice caching
             assert isinstance(self.a, np.memmap)
             a_slice = self.a[start:end, :].T        # NOTE: same as slicing the columns of self.a.T
-            a_pkg = DenseSliceCacheEntry(self.mmap_path, start, end, a_slice.copy(order='C'), 0, self.a.shape[1])       # TODO(as) is this the correct col_end?
+            a_pkg = DenseSliceCacheEntry(self.mmap_path, start, end, a_slice.copy(order='C'), 0, self.a.shape[1])
             return [MatmulWorkSlice(start, end, a_pkg, self.result.shape[1], a_dense=self.dense)]
 
     def fast_work_gen(self):
