@@ -215,7 +215,7 @@ void csr_col_slice(struct CSRSliceSerialize64* csr_serialize, struct CSRSliceSer
     double start_ms = (((double)start.tv_sec)*1000)+(((double)start.tv_usec)/1000);
     double stop_ms = (((double)stop.tv_sec)*1000)+(((double)stop.tv_usec)/1000);
     double diff_in_sec = (stop_ms - start_ms)/1000;
-    printf("Generated %ld column slices from (%ld, %ld) in: %f sec\n", n_slices, csr_serialize->nrow, csr_serialize->ncol, diff_in_sec);
+    printf("\nGenerated %ld column slices from (%ld, %ld) in: %f sec\n", n_slices, csr_serialize->nrow, csr_serialize->ncol, diff_in_sec);
 
 }
 
@@ -328,7 +328,7 @@ void csr_col_slice_param(float* data, int64_t* indices, int64_t* indptr, ssize_t
     double stop_ms = (((double)stop.tv_sec)*1000)+(((double)stop.tv_usec)/1000);
     double diff_in_sec = (stop_ms - start_ms)/1000;
     if(DEBUG)
-        printf("Generated %ld column slices from (%ld, %ld) in: %f sec\n", n_slices, nrow, ncol, diff_in_sec);
+        printf("\nGenerated %ld column slices from (%ld, %ld) in: %f sec\n", n_slices, nrow, ncol, diff_in_sec);
 
 }
 
