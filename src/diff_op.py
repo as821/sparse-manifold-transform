@@ -181,11 +181,11 @@ class DiffOpAssembly():
 
 
 def construct_diff_op(args, dset, alphas, context_sz, diff_op_chunk):
-    print("Assembling differential operator...", flush=True)
     zero_code = alphas.sum(axis=0)
     num_zero = np.where(zero_code == 0)[0].shape[0]
-    print("\tSC {:.3f} percent ({}) 'zero' patches...".format((num_zero / alphas.shape[1]) * 100, num_zero))    
+    print("\t{:.3f} percent ({}) 'zero' patches...".format((num_zero / alphas.shape[1]) * 100, num_zero))    
 
+    print("Assembling differential operator...", flush=True)
     doa = DiffOpAssembly(args, context_sz, dset, zero_code, diff_op_chunk, alphas)
     return (doa.out_slice_cache, doa.cache_dir)
 

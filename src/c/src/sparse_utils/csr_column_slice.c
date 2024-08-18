@@ -144,7 +144,7 @@ void csr_col_slice(struct CSRSliceSerialize64* csr_serialize, struct CSRSliceSer
 
     // manage matrix to process (note CSRSerialize to CSRSliceSerialize conversion, actually all on a single file)
     struct SliceBuilder csr = {.serialize=NULL};
-    printf("%ld %ld\n", csr_serialize->nnz, csr_serialize->nrow);
+    // printf("%ld %ld\n", csr_serialize->nnz, csr_serialize->nrow);
     CHECK(csr_serialize->nnz >= 0 && csr_serialize->nrow >= 0);
     init_file_wrapper(csr_serialize->data_fname, &csr.data_file, sizeof(float), buf_sz, -1, -1);
     init_file_wrapper(csr_serialize->indices_fname, &csr.indices_file, sizeof(int64_t), buf_sz, -1, -1);
@@ -203,7 +203,7 @@ void csr_col_slice(struct CSRSliceSerialize64* csr_serialize, struct CSRSliceSer
         fflush(stdout);
     }
     reached_end_of_row(slices, n_slices, row_cnt, row_slice);      // final indptr entry that marks end of last row
-    printf("\n\tconverting slices to unified memory format...\n");
+    // printf("\n\tconverting slices to unified memory format...\n");
     
     // multithreaded flushing of slices
     ssize_t concat_buffer_len = sizeof(float) * pow(2, 20) * 15;        // large buffer to handle concatenation of files
@@ -215,7 +215,7 @@ void csr_col_slice(struct CSRSliceSerialize64* csr_serialize, struct CSRSliceSer
     double start_ms = (((double)start.tv_sec)*1000)+(((double)start.tv_usec)/1000);
     double stop_ms = (((double)stop.tv_sec)*1000)+(((double)stop.tv_usec)/1000);
     double diff_in_sec = (stop_ms - start_ms)/1000;
-    printf("\tGenerated %ld column slices from (%ld, %ld) in: %f sec\n", n_slices, csr_serialize->nrow, csr_serialize->ncol, diff_in_sec);
+    printf("Generated %ld column slices from (%ld, %ld) in: %f sec\n", n_slices, csr_serialize->nrow, csr_serialize->ncol, diff_in_sec);
 
 }
 
@@ -288,7 +288,7 @@ void csr_col_slice_param(float* data, int64_t* indices, int64_t* indptr, ssize_t
     }
     reached_end_of_row(slices, n_slices, row_cnt, false);      // final indptr entry that marks end of last row
     if(DEBUG)
-        printf("\n\tconverting slices to unified memory format...\n");
+        printf("\nconverting slices to unified memory format...\n");
 
 
     // multithreaded flushing of slices
@@ -328,7 +328,7 @@ void csr_col_slice_param(float* data, int64_t* indices, int64_t* indptr, ssize_t
     double stop_ms = (((double)stop.tv_sec)*1000)+(((double)stop.tv_usec)/1000);
     double diff_in_sec = (stop_ms - start_ms)/1000;
     if(DEBUG)
-        printf("\tGenerated %ld column slices from (%ld, %ld) in: %f sec\n", n_slices, nrow, ncol, diff_in_sec);
+        printf("Generated %ld column slices from (%ld, %ld) in: %f sec\n", n_slices, nrow, ncol, diff_in_sec);
 
 }
 

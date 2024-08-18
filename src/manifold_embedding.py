@@ -33,7 +33,6 @@ class ManifoldEmbedLayer:
         print("Calculating embedding matrix...", flush=True)
         self.embed_dim = embed_dim
         self.args = args
-        print(f"Total sparsity: {alphas.nnz / (alphas.shape[0] * alphas.shape[1])}", flush=True)
 
         # Calculate inverse square root of the covariance matrix of the input
         inv_sqrt_alpha_cov = self._get_inv_sqrt_cov(args, alphas)
@@ -43,16 +42,11 @@ class ManifoldEmbedLayer:
         inner = self._calc_inner(args, alphas, diff_op)
         assert _np_is_real_sym(inner), "Inner is not real-symmetric."
 
-        print("\tGenerating closed form formulation...", flush=True)
-        print(f"Inner row norm error: {np.abs(np.sum(inner, axis=0)).max()}")
-
+        print("Generating closed form formulation...", flush=True)
         closed_form = inv_sqrt_alpha_cov @ inner @ inv_sqrt_alpha_cov
-        # print(f"\t\tInner condition: {np.linalg.cond(inner):.2E} (min diag: {closed_form.diagonal().min()})", flush=True)
-        # print(f"\t\tClosed form condition: {np.linalg.cond(closed_form):.2E} (min diag: {closed_form.diagonal().min()})", flush=True)
-        
         assert _np_is_real_sym(closed_form, verbose=False, tol=1e-1), "Closed form is not (almost) real-symmetric."
 
-        print("\tSolving closed form...", flush=True)
+        print("Solving closed form...", flush=True)
         success = False
         if torch.cuda.is_available():
             try:
@@ -97,12 +91,12 @@ class ManifoldEmbedLayer:
         print("Generating sliced cache for faster matmuls...", flush=True)
         c_enable = torch.cuda.is_available()
         if col_slice and not transpose_2d_slice and c_impl_available():
-            print("\tUsing optimized C-code for column slicing...")
+            print("Using C-code for column slicing...")
             cache_dir = args.mmap_path + f"/col_slice_cache_{randint(-sys.maxsize, sys.maxsize)}"
             os.mkdir(cache_dir)
             return csr_col_slice(cache_dir, alphas, batch_sz, True), cache_dir
         elif col_slice and transpose_2d_slice and c_impl_available():
-            print("\tUsing optimized C-code for tranposed column slicing...")
+            print("Using C-code for tranposed column slicing...")
             return csr_col_slice_transpose(args, alphas, batch_sz)
         else:
             mgccg = PreMatmulCacheGen(args, alphas, batch_sz, transpose_2d_slice, alphas_2d_slice=alphas_2d_slice, col_slice=col_slice, batch_sz_2d=batch_sz_2d, means=means)
@@ -117,7 +111,7 @@ class ManifoldEmbedLayer:
         alphas_T_cache = self._gen_slice_cache(args, alphas, args.cov_chunk, transpose_2d_slice=True, batch_sz_2d=args.cov_col_chunk)
 
         # "cov" is not really the covariance, it is AA^T / N per reference (2)
-        print("\tCalculating covariance matrix...", flush=True)
+        print("Calculating covariance matrix...", flush=True)
         if torch.cuda.is_available(): torch.cuda.empty_cache()        
         ssm = GpuSparseMatmul(alphas_cache, alphas_T_cache, True, args.cov_chunk, False, mmap_path=args.mmap_path, a_shape=alphas.shape)
         ssm.run(daemon=True)
@@ -128,7 +122,6 @@ class ManifoldEmbedLayer:
         assert _np_is_real_sym(cov, verbose=False)
         cov = torch.from_numpy(cov)       # No (useful) sparse eigen-solvers give all eigenvalues and this is a (dict_sz x dict_sz) covariance matrix (which tend to be dense)
         
-        print("Calculating inv. sqrt. cov. matrix...", flush=True)    
         inv_sqrt_alpha_cov = mx_inv_sqrt(cov).numpy()
         assert _np_is_real_sym(inv_sqrt_alpha_cov, False, tol=1), "Inv. sqrt. covariance is not (almost) real-symmetric."
         inv_sqrt_alpha_cov = force_symmetric(inv_sqrt_alpha_cov)
@@ -145,8 +138,7 @@ class ManifoldEmbedLayer:
         # Calculate A @ D @ D^T @ A^T from A and D@D^T
         # Apply differential operator to the alphas matrix (part of inner computation)
 
-        print("\tComputing inner...", flush=True)
-        # self._gen_slice_cache(args, diff_op, batch_sz=args.diff_op_d_chunk, col_slice=True)      # note: chunk sizes swapped compared to alphas cache...
+        print("Computing final cost matrix...", flush=True)
         diff_op_cache, cache_dir = diff_op
 
         if torch.cuda.is_available(): torch.cuda.empty_cache()
@@ -175,7 +167,6 @@ class ManifoldEmbedLayer:
     def _post_process_solution(self, args, evals, evecs):
         """Check solution for numerical instability, invert negative e'val, convert e'vec into (part of) the SMT embedding matrix."""
 
-        print("\tProcessing solution...", flush=True)
         neg_mask = evals < 0
         evecs[:, neg_mask] = evecs[:, neg_mask] * -1
         evals = np.abs(evals)
@@ -205,7 +196,7 @@ class ManifoldEmbedLayer:
         beta_flat = ssm.result
         
         # L2 normalizes embeddings as in (2)
-        print("\tNormalizing SMT embeddings...", flush=True)
+        print("Normalizing SMT embeddings...", flush=True)
 
         # TODO(as) trivial to do a better version of this in C. For now, just chunk across embedding array so doesnt use so much RAM at once
         # (accumulator array, iterate through rows of CSR summing squared entries, sqrt, iterate through CSR entries again dividing appropriately)
