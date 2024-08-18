@@ -28,8 +28,9 @@ class MatmulWorkSlice:
             for b_chunk in b_cache:
                 (b_start, b_end) = b_chunk
                 if sym:
-                    # NOTE: symmetric matrix optimization disabled
                     bs = b_cache[b_chunk][self.a.col_start]
+                    if bs.end <= self.a.start:
+                        continue
                 else:
                     bs = b_cache[b_chunk]
                 bs = bs.serialize()
@@ -54,10 +55,11 @@ class MatmulWorkSlice:
         else:
             a_slice = self.a.get()
             for b_chunk in b_cache:
-                # NOTE: symmetric matrix optimization disabled
                 b_slice = b_cache[b_chunk]
                 if sym:
                     b_slice = b_slice[self.a.col_start]
+                    if b_slice.end <= self.a.start:
+                        continue
                     result[:, b_slice.start:b_slice.end] = (a_slice.todense() @ b_slice.get().todense())
                 else:
                     assert self.a_dense
