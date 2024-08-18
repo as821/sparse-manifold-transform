@@ -17,7 +17,6 @@ MMAP_PATH="/ssd1/smt-mmap"
 import ctypes
 c_lib = ctypes.CDLL(EXE_PATH)
 from ctypes_interface import CSRSerialize
-c_lib.coo2csr_file.argtypes = (ctypes.POINTER(CSRSerialize), ctypes.c_char_p)
 c_lib.coo2csr_param.argtypes = (ctypes.c_longlong, ctypes.c_longlong, ctypes.c_longlong, \
                                 ctypes.POINTER(ctypes.c_longlong), ctypes.POINTER(ctypes.c_longlong), ctypes.POINTER(ctypes.c_float), \
                                 ctypes.POINTER(ctypes.c_longlong), ctypes.POINTER(ctypes.c_longlong), ctypes.POINTER(ctypes.c_float))
@@ -55,23 +54,18 @@ def main():
     a_shp = (200000, 10000)
     a = rand_coo(a_shp)
 
-    if(False):
-        a_serial = coo_write(a)
-        res_file = str.encode(MMAP_PATH + f"/test_coo2csr_res_{randint(-sys.maxsize, sys.maxsize)}.bin")
-        c_lib.coo2csr_file(ctypes.byref(a_serial), res_file)
-        res = csr_read(a, res_file)
-    else:
-        csr_data, csr_indices, csr_indptr = csr_alloc(a)
 
-        csr_data_p = csr_data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-        csr_indptr_p = csr_indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_longlong))
-        csr_indices_p = csr_indices.ctypes.data_as(ctypes.POINTER(ctypes.c_longlong))
-        coo_row_p = a.row.ctypes.data_as(ctypes.POINTER(ctypes.c_longlong))
-        coo_col_p = a.col.ctypes.data_as(ctypes.POINTER(ctypes.c_longlong))
-        coo_data_p = a.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+    csr_data, csr_indices, csr_indptr = csr_alloc(a)
 
-        c_lib.coo2csr_param(a.shape[0], a.shape[1], a.nnz, coo_row_p, coo_col_p, coo_data_p, csr_indices_p, csr_indptr_p, csr_data_p)
-        res = sp.csr_array((csr_data, csr_indices, csr_indptr), shape=a.shape, dtype=a.dtype, copy=False)
+    csr_data_p = csr_data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+    csr_indptr_p = csr_indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_longlong))
+    csr_indices_p = csr_indices.ctypes.data_as(ctypes.POINTER(ctypes.c_longlong))
+    coo_row_p = a.row.ctypes.data_as(ctypes.POINTER(ctypes.c_longlong))
+    coo_col_p = a.col.ctypes.data_as(ctypes.POINTER(ctypes.c_longlong))
+    coo_data_p = a.data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+
+    c_lib.coo2csr_param(a.shape[0], a.shape[1], a.nnz, coo_row_p, coo_col_p, coo_data_p, csr_indices_p, csr_indptr_p, csr_data_p)
+    res = sp.csr_array((csr_data, csr_indices, csr_indptr), shape=a.shape, dtype=a.dtype, copy=False)
 
     # Check correctness
     a_csr = a.tocsr()

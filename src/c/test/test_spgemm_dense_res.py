@@ -10,7 +10,7 @@ sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 from input_output import mmap_unified_write, mmap_unified_read
-from ctypes_interface import CSRSerialize, spgemm_batched_matmul
+from ctypes_interface import CSRSerialize, spgemm_batched_matmul_c
 
 MMAP_PATH="/ssd1/smt-mmap"
 
@@ -65,7 +65,7 @@ def main():
     b_serials = [CSRSerialize(str.encode(b_fname), b.nnz, b.shape[0], b.shape[1], -1, -1) for b_fname, b in zip(b_fnames, bs)]
     c_files = [MMAP_PATH + f"/test_spgemm_res_{randint(-sys.maxsize, sys.maxsize)}.bin" for _ in range(n_b)]
     for _ in tqdm(range(n_iter)):       # run repeatedly as a sanity check
-        spgemm_batched_matmul(a_serial, b_serials, c_files)
+        spgemm_batched_matmul_c(a_serial, b_serials, c_files)
 
     # Process results 
     b_stack = sp.hstack(bs, dtype=np.float32)
