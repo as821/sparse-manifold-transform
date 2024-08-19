@@ -5,16 +5,9 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-
-
-
-
-
 void csr_postproc(char** input_files, char* out_file, int64_t n_inp, int64_t inp_nrow, int64_t* inp_ncol) {
-    // TODO(as) iterate through all the input files, collecting entries for one row at a time + writing it to the output file
+    // Iterate through all the input files, collecting entries for one row at a time + writing it to the output file
     // NOTE: assumes entire contents of one row of the output matrix can fit into RAM (not a hard constraint, can be avoided by using a tmp file...)
-
-
     // open all input files
     int64_t total_col = 0;
     int fd_buf[n_inp];

@@ -1,9 +1,8 @@
 import os
 import sys
 import shutil
-import torch
 
-from ctypes_interface import spmm_batched, spgemm_batched_matmul_dop, CSRSerialize, DenseSerialize
+from ctypes_interface import spmm_batched, spgemm_batched_matmul_dop, CSRSerialize, DenseSerialize, c_impl_available
 
 import numpy as np
 import scipy.sparse as sp
@@ -35,7 +34,7 @@ class LossMatrixWorkSlice():
         assert not os.path.exists(out_fname)
         open(out_fname, "wb").close()
 
-        if torch.cuda.is_available():
+        if c_impl_available():
             a_serials = []
             b_serials = []
             shps = []
@@ -71,7 +70,10 @@ class LossMatrixWorkSlice():
                 b_serial_k = []
                 for b_row_slice in alphas_T_cache:
                     ks = sorted(list(alphas_T_cache[b_row_slice].keys()))          # process columns in order
-                    b_serials.append(alphas_T_cache[b_row_slice][ks[didx]].serialize())
+                    b_slice = alphas_T_cache[b_row_slice][ks[didx]]
+                    if b_slice.end <= self.row_range[0]:            # ADD^TA^T is symmetric
+                        continue                    
+                    b_serials.append(b_slice.serialize())
                     b_serial_k.append(b_row_slice)
                 
                 # calc all matmuls that include this dop cache entry
@@ -112,6 +114,8 @@ class LossMatrixWorkSlice():
                 for d, b in zip(dop, ks):
                     a_slice = d.T
                     b_slice = alphas_T_cache[b_row_slice][b]
+                    if b_slice.end <= self.row_range[0]:            # ADD^TA^T is symmetric
+                        continue
                     result[:, b_start:b_end] += (b_slice.get().todense() @ a_slice).T
 
         with open(out_fname, 'ab') as fid:
@@ -172,13 +176,7 @@ class LossMatrixCalc(MultiProcessDispatch):
         for k in ks:
             # NOTE: same output dimensions, but prunes the internal dimension of the matmul to only cover the nonzero elements of the second operand
             entry = self.diff_op_cache[k]
-            # a_slc = alphas_slice[:, entry.col_start:(entry.col_end+1)]      # +1 since if only have one nonzero row, col_start==col_end and then this is an empty slice
             a_slc = alphas_slice[:, entry.col_start:entry.col_end]
-
-            # tst = entry.get()
-            # full = alphas_slice @ tst     # TODO(as) for this to work, need to disable column slicing in SliceCacheWorkSlice::process
-            # less = alphas_slice[:, entry.col_start:entry.col_end] @ tst[entry.col_start:entry.col_end, :]
-            # assert np.all(full.todense() == less.todense())
 
             assert a_slc.indices.dtype == np.int32 and a_slc.indptr.dtype == np.int32
             fname = self.alphas_cache_dir + f"/sparse_dop_aslice_{start}_{k[0]}_{k[1]}.bin"
@@ -201,8 +199,6 @@ class LossMatrixCalc(MultiProcessDispatch):
 
     def postprocess_results(self):
         shutil.rmtree(self.alphas_cache_dir)
-
-        print("Clearing transpose slicing cache...", flush=True)
         for k in self.alphas_T_cache:
             for i in self.alphas_T_cache[k]:
                 self.alphas_T_cache[k][i].cleanup()

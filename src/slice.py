@@ -1,6 +1,5 @@
 import os
 import sys
-import torch
 import time
 from tqdm import tqdm
 import numpy as np
@@ -12,7 +11,7 @@ from queue import Empty
 from input_output import mmap_unified_read, mmap_unified_write, mmap_unified_write_zero_copy, MemmapCSR
 from matrix_utils import csr_row_view, profile_log
 from multiproc import MultiProcessDispatch
-from ctypes_interface import CSRSerialize, CSRSliceSerialize, CSRSliceSerialize64, csr_col_slice_param_c, csr_col_slice_c
+from ctypes_interface import CSRSerialize, CSRSliceSerialize, CSRSliceSerialize64, csr_col_slice_param_c, csr_col_slice_c, c_impl_available
 
 
 
@@ -100,8 +99,8 @@ class SliceCacheWorkSlice():
         elif self.alphas_2d_slice:
             # Performs 2D slicing along single set of rows + then batches across all columns
             slc = csr_row_view(alphas, self.start, self.end)  
-            if torch.cuda.is_available():
-                tmp = csr_col_slice_param(args, slc, self.batch_sz_2d)      # doesnt actually use cuda, just an easy way to check if running on mac or linux machine
+            if c_impl_available():
+                tmp = csr_col_slice_param(args, slc, self.batch_sz_2d)
                 out = []
                 for o in tmp:
                     # print(f"{self.start} <-> {self.end}: {o.shape} {o.start} {o.end} {o.col_start} {o.col_end} {slc.shape}")
@@ -127,7 +126,7 @@ class SliceCacheWorkSlice():
 
 def _matmul_cache_gen_worker(w_q, r_q, w_done, idx, worker_init_args):
     # Load alphas mmap into the worker
-    data_pkg, indptr_pkg, indices_pkg, dtype, shape, a, m = worker_init_args        # TODO(as) fix this...
+    data_pkg, indptr_pkg, indices_pkg, dtype, shape, a, m = worker_init_args
     data = np.memmap(data_pkg[0], dtype=data_pkg[1], mode="r", shape=data_pkg[2])
     indptr = np.memmap(indptr_pkg[0], dtype=indptr_pkg[1], mode="r", shape=indptr_pkg[2])
     indices = np.memmap(indices_pkg[0], dtype=indices_pkg[1], mode="r", shape=indices_pkg[2])

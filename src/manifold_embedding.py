@@ -12,6 +12,7 @@ from matrix_utils import mx_inv_sqrt, _np_is_real_sym, force_symmetric
 from matmul import GpuSparseMatmul
 from slice import PreMatmulCacheGen, csr_col_slice, csr_col_slice_transpose
 from loss_mx_calc import LossMatrixCalc
+from ctypes_interface import c_impl_available
 
 class ManifoldEmbedLayer:
     def __init__(self, args, alphas, diff_op, embed_dim, proj=None):
@@ -25,15 +26,13 @@ class ManifoldEmbedLayer:
             self.args = args
             return
     
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
     
         assert alphas.dtype == np.float32
         assert isinstance(alphas, (sci.sparse.csr_array))
         print("Calculating embedding matrix...", flush=True)
         self.embed_dim = embed_dim
         self.args = args
-        print(f"Total sparsity: {alphas.nnz / (alphas.shape[0] * alphas.shape[1])}", flush=True)
 
         # Calculate inverse square root of the covariance matrix of the input
         inv_sqrt_alpha_cov = self._get_inv_sqrt_cov(args, alphas)
@@ -43,38 +42,23 @@ class ManifoldEmbedLayer:
         inner = self._calc_inner(args, alphas, diff_op)
         assert _np_is_real_sym(inner), "Inner is not real-symmetric."
 
-        print("\tGenerating closed form formulation...", flush=True)
-        print(f"Inner row norm error: {np.abs(np.sum(inner, axis=0)).max()}")
-        if args.inner_renorm:
-            # Renormalizes inner matrix along its rows to account for accumulated numerical error
-            # This is an imperfect solution (but it should help)
-            
-            inner -= np.eye(inner.shape[0]) * np.sum(inner, axis=0)
-            print(f"Inner row norm error (post): {np.abs(np.sum(inner, axis=0)).max()}")
-
+        print("Generating closed form formulation...", flush=True)
         closed_form = inv_sqrt_alpha_cov @ inner @ inv_sqrt_alpha_cov
-        # print(f"\t\tInner condition: {np.linalg.cond(inner):.2E} (min diag: {closed_form.diagonal().min()})", flush=True)
-        # print(f"\t\tClosed form condition: {np.linalg.cond(closed_form):.2E} (min diag: {closed_form.diagonal().min()})", flush=True)
-        
-        # TODO(as) disable temporarily for laplacian
-        assert args.optim == "laplacian" or _np_is_real_sym(closed_form, verbose=False, tol=1e-1), "Closed form is not (almost) real-symmetric."
+        assert _np_is_real_sym(closed_form, verbose=False, tol=1e-1), "Closed form is not (almost) real-symmetric."
 
-        print("\tSolving closed form...", flush=True)
+        print("Solving closed form...", flush=True)
         success = False
         if torch.cuda.is_available():
             try:
                 evals, evecs = torch.linalg.eigh(torch.from_numpy(closed_form).to('cuda:0'))
                 evals = evals.cpu().numpy()
                 evecs = evecs.cpu().numpy()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                if torch.cuda.is_available(): torch.cuda.empty_cache()
                 success = True    
             except RuntimeError as e:
                 if 'out of memory' not in str(e):
                     raise e
-                else:
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                elif torch.cuda.is_available(): torch.cuda.empty_cache()
         if not success:
             # run on CPU if no GPU or out of VRAM
             if sys.version_info < (3, 11):
@@ -106,13 +90,13 @@ class ManifoldEmbedLayer:
         # Given a CSR matrix, slice it according to the proper batch size, then store as a mmap
         print("Generating sliced cache for faster matmuls...", flush=True)
         c_enable = torch.cuda.is_available()
-        if col_slice and not transpose_2d_slice and c_enable:
-            print("\tUsing optimized C-code for column slicing...")
+        if col_slice and not transpose_2d_slice and c_impl_available():
+            print("Using C-code for column slicing...")
             cache_dir = args.mmap_path + f"/col_slice_cache_{randint(-sys.maxsize, sys.maxsize)}"
             os.mkdir(cache_dir)
             return csr_col_slice(cache_dir, alphas, batch_sz, True), cache_dir
-        elif col_slice and transpose_2d_slice and c_enable:
-            print("\tUsing optimized C-code for tranposed column slicing...")
+        elif col_slice and transpose_2d_slice and c_impl_available():
+            print("Using C-code for tranposed column slicing...")
             return csr_col_slice_transpose(args, alphas, batch_sz)
         else:
             mgccg = PreMatmulCacheGen(args, alphas, batch_sz, transpose_2d_slice, alphas_2d_slice=alphas_2d_slice, col_slice=col_slice, batch_sz_2d=batch_sz_2d, means=means)
@@ -127,7 +111,7 @@ class ManifoldEmbedLayer:
         alphas_T_cache = self._gen_slice_cache(args, alphas, args.cov_chunk, transpose_2d_slice=True, batch_sz_2d=args.cov_col_chunk)
 
         # "cov" is not really the covariance, it is AA^T / N per reference (2)
-        print("\tCalculating covariance matrix...", flush=True)
+        print("Calculating covariance matrix...", flush=True)
         if torch.cuda.is_available(): torch.cuda.empty_cache()        
         ssm = GpuSparseMatmul(alphas_cache, alphas_T_cache, True, args.cov_chunk, False, mmap_path=args.mmap_path, a_shape=alphas.shape)
         ssm.run(daemon=True)
@@ -138,12 +122,9 @@ class ManifoldEmbedLayer:
         assert _np_is_real_sym(cov, verbose=False)
         cov = torch.from_numpy(cov)       # No (useful) sparse eigen-solvers give all eigenvalues and this is a (dict_sz x dict_sz) covariance matrix (which tend to be dense)
         
-        print("\tCalculating inv. sqrt. cov. matrix...", flush=True)    
         inv_sqrt_alpha_cov = mx_inv_sqrt(cov).numpy()
-        assert _np_is_real_sym(inv_sqrt_alpha_cov, True, tol=1), "Inv. sqrt. covariance is not (almost) real-symmetric."
+        assert _np_is_real_sym(inv_sqrt_alpha_cov, False, tol=1), "Inv. sqrt. covariance is not (almost) real-symmetric."
         inv_sqrt_alpha_cov = force_symmetric(inv_sqrt_alpha_cov)
-
-        print("Clearing generated slicing caches...", flush=True)
         for k in alphas_T_cache:
             for i in alphas_T_cache[k]:
                 alphas_T_cache[k][i].cleanup()
@@ -157,12 +138,10 @@ class ManifoldEmbedLayer:
         # Calculate A @ D @ D^T @ A^T from A and D@D^T
         # Apply differential operator to the alphas matrix (part of inner computation)
 
-        print("\tComputing inner...", flush=True)
-        # self._gen_slice_cache(args, diff_op, batch_sz=args.diff_op_d_chunk, col_slice=True)      # note: chunk sizes swapped compared to alphas cache...
+        print("Computing final cost matrix...", flush=True)
         diff_op_cache, cache_dir = diff_op
 
-        if torch.cuda.is_available(): 
-            torch.cuda.empty_cache()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
 
         calc = LossMatrixCalc(args, alphas, diff_op_cache)
         calc.run(daemon=True)
@@ -171,8 +150,7 @@ class ManifoldEmbedLayer:
         inner = force_symmetric(inner)
         assert _np_is_real_sym(inner, verbose=False)
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
 
         # g = (alphas @ diff_op).todense()
         # gt = g @ alphas.todense().T
@@ -180,7 +158,6 @@ class ManifoldEmbedLayer:
         # print("DIFF: ", diff)
         # sys.exit()
             
-        print("Clearing diff. op. slicing cache...", flush=True)
         for k in diff_op_cache:
             diff_op_cache[k].cleanup()
         if cache_dir != "":
@@ -190,7 +167,6 @@ class ManifoldEmbedLayer:
     def _post_process_solution(self, args, evals, evecs):
         """Check solution for numerical instability, invert negative e'val, convert e'vec into (part of) the SMT embedding matrix."""
 
-        print("\tProcessing solution...", flush=True)
         neg_mask = evals < 0
         evecs[:, neg_mask] = evecs[:, neg_mask] * -1
         evals = np.abs(evals)
@@ -200,7 +176,7 @@ class ManifoldEmbedLayer:
 
         # Select the f eigenvectors with smallest eigenvalues (eigenvectors are COLUMNs of evec matrix (see torch.linalg.eig reference))
         # Need to convert them to rows to give a mapping to f-dimensional space
-        if args.color_embed_drop:
+        if not args.disable_color_embed_drop:
             skip_first_n = 16
             indices = np.argsort(evals, kind='stable')[skip_first_n:(self.embed_dim + skip_first_n)] 
         else:
@@ -213,11 +189,6 @@ class ManifoldEmbedLayer:
 
     def __call__(self, x):
         """Apply calculated SMT to given inputs, return their embeddings."""        
-        
-        if self.args.unnorm_embed:
-            # Un-normalize SC embeddings
-            x.data[:] = 1
-        
         # Want to calculate self.projection @ x, but spmm requires "sparse @ dense" format so instead we calculate (x.T @ self.projection.T).T
         cache = self._gen_slice_cache(self.args, x, self.args.proj_col_chunk, col_slice=True, transpose_2d_slice=True)        # column-slicing, but also transpose slices
         ssm = GpuSparseMatmul(self.projection, cache, False, self.args.proj_row_chunk, dense_matmul=True, mmap_path=self.args.mmap_path, a_shape=x.shape)
@@ -225,15 +196,11 @@ class ManifoldEmbedLayer:
         beta_flat = ssm.result
         
         # L2 normalizes embeddings as in (2)
-        print("\tNormalizing SMT embeddings...", flush=True)
-
-        # TODO(as) trivial to do a better version of this in C. For now, just chunk across embedding array so doesnt use so much RAM at once
-        # (accumulator array, iterate through rows of CSR summing squared entries, sqrt, iterate through CSR entries again dividing appropriately)
+        print("Normalizing SMT embeddings...", flush=True)
         chnk_sz = int(beta_flat.shape[1] / 10)
         for start in tqdm(range(0, beta_flat.shape[1], chnk_sz)):
             end = min(beta_flat.shape[1], start + chnk_sz)
             beta_flat[:, start:end] /= (np.linalg.norm(beta_flat[:, start:end], ord=2, axis=0) + 1e-20)
-        print("\tdone.", flush=True)
         return beta_flat
 
 

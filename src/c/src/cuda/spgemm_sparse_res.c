@@ -212,7 +212,7 @@ void spgemm_batched_matmul_dop(struct CSRSerialize** a_serial_arr, struct CSRSer
     int idx_sz = sizeof(int);
 
     struct PinnedMemBuffer pinned_buf;
-    pinned_buf.n_buf = 2 * read_max_preload;            // TODO(as) bug somewhere in sync code, why is this needed?
+    pinned_buf.n_buf = 2 * read_max_preload;
     pinned_mem_buf_alloc(&pinned_buf, a_serial_arr, b_serial_arr, b_arr_len, item_sz, idx_sz);
 
     // set up data loader threads

@@ -81,7 +81,7 @@ class MultiProcessDispatch():
         if not self.fast_work_gen():
             pbar = tqdm(total=self.get_nbatch())    
         n_work_left = 0
-        for idx in tqdm(range(self.get_nbatch())):
+        for idx in range(self.get_nbatch()):
             work = self.generate_work(idx)
             if isinstance(work, (list)):
                 for w in work:
@@ -107,7 +107,7 @@ class MultiProcessDispatch():
         # Wait for remaining work to complete
         while n_work_left > 0:
             try:
-                res = res_q.get(block=True, timeout=0.5)        # TODO(as) this shouldn't be needed, but sometimes it hangs at the end...
+                res = res_q.get(block=True, timeout=0.5)
             except Empty:
                 continue
             self.process_result(res)
@@ -117,7 +117,6 @@ class MultiProcessDispatch():
         pbar.close()
 
         # Clean up worker processes
-        print("\tWaiting for workers to terminate...", flush=True)
         for p in proc:
             p.join()
             assert p.exitcode == 0, f"Worker process failed with error code: {p.exitcode}"

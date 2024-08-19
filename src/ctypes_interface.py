@@ -82,6 +82,10 @@ if os.path.exists("src/c/bin/csr_column_slice.so"):
     col_slice.csr_col_slice_param.argtypes = (ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_longlong), ctypes.POINTER(ctypes.c_longlong), ctypes.c_ssize_t, ctypes.c_ssize_t, ctypes.c_ssize_t, ctypes.POINTER(ctypes.POINTER(CSRSliceSerialize)), ctypes.c_ssize_t, ctypes.c_ssize_t, ctypes.c_ssize_t)
 
 
+def c_impl_available():
+    return os.path.exists("src/c/bin/cuda_c_func.so") and os.path.exists("src/c/bin/coo2csr.so") and os.path.exists("src/c/bin/csr_column_slice.so")
+
+
 def spgemm_batched_matmul_c(a_serial, b_serials, c_files):
     arr = (ctypes.POINTER(CSRSerialize) * len(b_serials))(*[ctypes.pointer(b_serial) for b_serial in b_serials])
     c_files = [str.encode(c) for c in c_files]

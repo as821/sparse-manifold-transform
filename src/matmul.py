@@ -1,12 +1,11 @@
 import sys
 import os
-import torch
 from queue import Empty
 import numpy as np
 import scipy.sparse as sp
 from random import randint
 
-from ctypes_interface import spgemm_batched_matmul_c, spmm_batched, DenseSerialize
+from ctypes_interface import spgemm_batched_matmul_c, spmm_batched, DenseSerialize, c_impl_available
 from multiproc import MultiProcessDispatch
 from input_output import mmap_file_init, mmap_file_load_1d
 
@@ -22,14 +21,15 @@ class MatmulWorkSlice:
         b_cache, mmap_path, sym = args
         result = np.zeros(shape=(self.end-self.start, self.n_col))
 
-        if torch.cuda.is_available():
+        if c_impl_available():
             a_serial = self.a.serialize()
             b_serials = []
             for b_chunk in b_cache:
                 (b_start, b_end) = b_chunk
                 if sym:
-                    # NOTE: symmetric matrix optimization disabled
                     bs = b_cache[b_chunk][self.a.col_start]
+                    if bs.end <= self.a.start:
+                        continue
                 else:
                     bs = b_cache[b_chunk]
                 bs = bs.serialize()
@@ -54,10 +54,11 @@ class MatmulWorkSlice:
         else:
             a_slice = self.a.get()
             for b_chunk in b_cache:
-                # NOTE: symmetric matrix optimization disabled
                 b_slice = b_cache[b_chunk]
                 if sym:
                     b_slice = b_slice[self.a.col_start]
+                    if b_slice.end <= self.a.start:
+                        continue
                     result[:, b_slice.start:b_slice.end] = (a_slice.todense() @ b_slice.get().todense())
                 else:
                     assert self.a_dense
@@ -127,7 +128,7 @@ class GpuSparseMatmul(MultiProcessDispatch):
             # NOTE: self.a is a dense matrix, effectively does the same thing here as 2D alphas slice caching
             assert isinstance(self.a, np.memmap)
             a_slice = self.a[start:end, :].T        # NOTE: same as slicing the columns of self.a.T
-            a_pkg = DenseSliceCacheEntry(self.mmap_path, start, end, a_slice.copy(order='C'), 0, self.a.shape[1])       # TODO(as) is this the correct col_end?
+            a_pkg = DenseSliceCacheEntry(self.mmap_path, start, end, a_slice.copy(order='C'), 0, self.a.shape[1])
             return [MatmulWorkSlice(start, end, a_pkg, self.result.shape[1], a_dense=self.dense)]
 
     def fast_work_gen(self):

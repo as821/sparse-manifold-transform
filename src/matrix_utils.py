@@ -34,7 +34,6 @@ def mx_frac_pow(m, p, tol):
     m = m.cpu()
 
     # invert any negative e'val/e'vec
-    # TODO(as) really shouldnt need this...
     neg_mask = evals < 0
     evecs[:, neg_mask] = evecs[:, neg_mask] * -1
     evals = torch.abs(evals)
@@ -57,8 +56,7 @@ def mx_frac_pow(m, p, tol):
     assert not torch.any(torch.isnan(out)), "Matrix inverse sqrt. is NaN"
     out = out.cpu()
     out = out.to(orig_dtype)
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if torch.cuda.is_available(): torch.cuda.empty_cache()
     return out
 
 def mx_inv_sqrt(m, tol=1e-15):
