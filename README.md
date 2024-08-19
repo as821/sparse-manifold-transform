@@ -3,8 +3,6 @@ Unofficial implementation of the Sparse Manifold Transform.
 
 ## Installation
 
-TODO: make requirements.txt
-
 Install the required dependencies through the provided `requirements.txt`.
 
 Using provided C implementation of various sparse matrix operations is strongly recommended for best performance. Assumes gcc and nvcc are installed and in your PATH.
@@ -28,10 +26,16 @@ When calculating the covariance and the final cost matrices, 100s of GB will be 
 CIFAR10 Results are given as (Top 1, Top 5) accuracy. Options are optimized for 128GB RAM and 24GB VRAM.
 
 Small 1000 sample run: (58.25, 93.11)
-`python3 scripts/calc_smt.py --dataset=cifar10 --dataset-path=/home/astange/slots/data/cifar --embed-dim=384 --dict-sz=8192 --mmap-path=/ssd1/smt-mmap --gq_thresh=0.3 --optim=two --samples=1000 --context-sz=32 --dict_thresh=0.38 --classify_chunk=500 --patch-sz=6 --diff_op_a_chunk=1024 --diff_op_d_chunk=100  --cov_chunk=1024`
+
+```
+python3 scripts/calc_smt.py --dataset=cifar10 --dataset-path=/home/astange/slots/data/cifar --embed-dim=384 --dict-sz=8192 --mmap-path=/ssd1/smt-mmap --gq_thresh=0.3 --optim=two --samples=1000 --context-sz=32 --dict_thresh=0.38 --classify_chunk=500 --patch-sz=6 --diff_op_a_chunk=1024 --diff_op_d_chunk=100  --cov_chunk=1024
+```
     
 Full dataset: (78.06, 97.84)
-`python3 scripts/calc_smt.py --dataset=cifar10 --dataset-path=/home/astange/slots/data/cifar --embed-dim=384 --dict-sz=8192 --mmap-path=/ssd1/smt-mmap --gq_thresh=0.3 --optim=two --samples=50000 --context-sz=32 --dict_thresh=0.35 --classify_chunk=500 --patch-sz=6 --diff_op_a_chunk=1024 --diff_op_d_chunk=100  --cov_chunk=1024`
+
+```
+python3 scripts/calc_smt.py --dataset=cifar10 --dataset-path=/home/astange/slots/data/cifar --embed-dim=384 --dict-sz=8192 --mmap-path=/ssd1/smt-mmap --gq_thresh=0.3 --optim=two --samples=50000 --context-sz=32 --dict_thresh=0.35 --classify_chunk=500 --patch-sz=6 --diff_op_a_chunk=1024 --diff_op_d_chunk=100  --cov_chunk=1024
+```
 
 Note that these results are slightly lower than those presented in [2] (78.06 % vs. 79.2%). This is likely due to a combination of differences in dictionary selection, unpublished hyperparameters such as the tolerance added to avoid singular whitening matrices, and the fact that the non-associativity of floating point operations can inflate the impact of differences in implementation details. 
 
