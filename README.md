@@ -37,7 +37,7 @@ Full dataset: (78.06, 97.84)
 python3 scripts/calc_smt.py --dataset=cifar10 --dataset-path=<CIFAR_PATH> --embed-dim=384 --dict-sz=8192 --mmap-path=<MMAP_PATH> --gq_thresh=0.3 --optim=two --samples=50000 --context-sz=32 --dict_thresh=0.35 --classify_chunk=500 --patch-sz=6 --diff_op_a_chunk=1024 --diff_op_d_chunk=100  --cov_chunk=1024
 ```
 
-Note that these results are slightly lower than those presented in [2] (78.06 % vs. 79.2%). This is likely due to a combination of differences in dictionary selection, unpublished hyperparameters such as the tolerance added to avoid singular whitening matrices, and the fact that the non-associativity of floating point operations can inflate the impact of differences in implementation details. 
+Note that these results are slightly lower than those presented in [2] (78.06 % vs. 79.2%). This is likely due to a combination of differences in dictionary selection, unpublished hyperparameters such as the tolerance added to avoid singular whitening matrices, and the non-associativity of floating point operations which can highlight differences in implementation details.
 
 ## Implementation Details
 
