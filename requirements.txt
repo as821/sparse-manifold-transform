@@ -1,0 +1,7 @@
+cupy_cuda12x==13.0.0
+einops==0.8.0
+numpy==2.1.0
+scipy==1.14.0
+torch==2.0.1
+torchvision==0.15.2
+tqdm==4.66.1
