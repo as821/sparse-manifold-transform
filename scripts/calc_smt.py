@@ -65,7 +65,7 @@ if __name__ == "__main__":
     args = validate_args(generate_argparser().parse_args())
     with torch.no_grad():
         main(args)
-    print(f"Finished in {time.time() - start_time}s")
+    print(f"Finished in {time.time() - start_time:.2f}s")
 
 
 
