@@ -1,6 +1,5 @@
 import os
 import sys
-import torch
 import time
 from tqdm import tqdm
 import numpy as np

@@ -1,7 +1,6 @@
 import os
 import sys
 import shutil
-import torch
 
 from ctypes_interface import spmm_batched, spgemm_batched_matmul_dop, CSRSerialize, DenseSerialize, c_impl_available
 

@@ -12,6 +12,8 @@ import torch
 from einops import rearrange
 import sys
 import os
+import numpy as np
+import time
 
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
@@ -23,7 +25,6 @@ from util import generate_dset_dict_codes, generate_argparser, validate_args
 from input_output import mmap_csr_cleanup
 from classifier import test_set_classify
 
-import numpy as np
 
 def main(args):
     # Generate dataset and sparse codes for images
@@ -55,6 +56,7 @@ def main(args):
 
 
 if __name__ == "__main__":
+    start_time = time.time()
 
     # https://github.com/cupy/cupy/issues/3431#issuecomment-647931780
     # https://github.com/numpy/numpy/blob/da1621637b7c59c155ec29466fb5f810ebd902ac/numpy/__init__.py#L334-L353
@@ -63,7 +65,7 @@ if __name__ == "__main__":
     args = validate_args(generate_argparser().parse_args())
     with torch.no_grad():
         main(args)
-    print("Done")
+    print(f"Finished in {time.time() - start_time}s")
 
 
 
