@@ -122,7 +122,7 @@ def generate_argparser():
     parser.add_argument('--test-samples', default=10000, type=int, help='number of training samples to use')
     parser.add_argument('--optim', default='two', choices=['one', 'two'], help='optimization equation to use from (2), naming follows the equation numbers from that paper. "one" is first deriv., "two" is second deriv.')
     parser.add_argument('--mmap-path', default="/tmp/smt-memmap", type=str, help='path to store temporary memory map files')
-
+    parser.add_argument('--dict_path', default="", type=str, help='')
 
     # Image pre-processor
     parser.add_argument('--patch-sz', default=6, type=int, help='image patch size')

@@ -9,6 +9,11 @@ from input_output import mmap_coo_arrays_to_csr, File
 from matrix_utils import profile_log
 from time import time
 
+import sys
+sys.path.append("/home/astange/slots/sparse-coding/src")
+from cinterface import cu_fista
+
+
 if torch.cuda.is_available():
     import cupy as cp
 
@@ -60,7 +65,7 @@ def _general_sparse_coding(args, data, phi, gq_thresh, test=False):
         samples = args.samples
     # print(f"SC using # patch per image: {n_patch_per_img}, data shape: ({data.shape[0]}, {data.shape[1]}), # samples: {samples}")
 
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and args.dict_path == "":
         phi = phi.to(f'cuda:0', non_blocking=True)
 
     batch_sz = args.sc_chunk
@@ -93,30 +98,41 @@ class SparseWorkSlice():
         running = time()
         running = profile_log(profile, running, "start")
         
-        if torch.cuda.is_available() and gpu_idx >= 0:
-            self.batch = self.batch.to(f'cuda:{gpu_idx}', non_blocking=True)
+        if args.dict_path != "":
+            # perform "real" sparse coding
+            alpha = 0.0005
+            lr = 0.001
+            converge_thresh = 0.0001
+            fista_max_iter = 10000
+            codes, itr, _ = cu_fista(self.batch.T.contiguous(), phi, alpha, fista_max_iter, converge_thresh, lr, path="/home/astange/slots/sparse-coding/src/c/bin/cu_fista_89.so")
+            codes = codes.T.contiguous()
+            # print(f"{itr}")
+            assert codes.shape == (phi.shape[1], self.batch.shape[1])
+        else:
+            if torch.cuda.is_available() and gpu_idx >= 0:
+                self.batch = self.batch.to(f'cuda:{gpu_idx}', non_blocking=True)
 
-        # Data and phi are both L2 normalized, so their cosine similarity is their dot product
-        cosine_sim = phi.T @ self.batch
-        running = profile_log(profile, running, "matmul")
+            # Data and phi are both L2 normalized, so their cosine similarity is their dot product
+            cosine_sim = phi.T @ self.batch
+            running = profile_log(profile, running, "matmul")
 
-        # Ensure that each data point has at least 1 entry >= thresh (when applicable)
-        if self.test or args.zero_code_disable:
-            amax = cosine_sim.argmax(dim=0)
-            ind = torch.arange(0, amax.shape[0])
-            cosine_sim[amax, ind] = self.thresh   
+            # Ensure that each data point has at least 1 entry >= thresh (when applicable)
+            if self.test or args.zero_code_disable:
+                amax = cosine_sim.argmax(dim=0)
+                ind = torch.arange(0, amax.shape[0])
+                cosine_sim[amax, ind] = self.thresh   
 
-        running = profile_log(profile, running, "misc")
+            running = profile_log(profile, running, "misc")
 
-        # only contains 0/1 entries
-        codes = torch.zeros_like(cosine_sim)
-        codes[cosine_sim >= self.thresh] = 1
+            # only contains 0/1 entries
+            codes = torch.zeros_like(cosine_sim)
+            codes[cosine_sim >= self.thresh] = 1
 
-        running = profile_log(profile, running, "set one")
+            running = profile_log(profile, running, "set one")
 
-        col_sums = codes.sum(axis=0)
-        ind = col_sums > 0
-        running = profile_log(profile, running, "sum")
+            col_sums = codes.sum(axis=0)
+            ind = col_sums > 0
+            running = profile_log(profile, running, "sum")
 
         if torch.cuda.is_available():
             # performs dense -> COO conversion on the GPU
@@ -140,6 +156,11 @@ def generate_dict(args, x, dict_sz, dict_thresh):
     """Generate dictionary elements from the already generated data points.
     NOTE: could run dictionary learning with multiple initialization and pick the best (like normal K-Means)
     """
+    if args.dict_path != "":
+        d = torch.load(args.dict_path).weight.data
+        assert d.shape == (x.shape[0], dict_sz)
+        return d, None
+
     print("Generating dictionary...", flush=True)
 
     # Return a random selection of (unique) image patches as the dictionary to use

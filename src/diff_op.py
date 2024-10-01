@@ -29,7 +29,7 @@ class DiffOpAssembly():
         # NOTE: this assumes block sparsity of the full diff op mx. For each sample, we have a 
         # (num. patches) * (num. patches) block that can be non-zero. Worst case assume that this
         # entire block is non-zero for each image (full context window)
-        max_sz = args.samples * self.n_patch_per_img * self.n_patch_per_img
+        max_sz = args.samples * self.n_patch_per_img * self.n_patch_per_img + 1
         self.out_shape = (self.n_patch_per_img * self.args.samples, self.n_patch_per_img * self.args.samples)
         
         # tmp buffering for each slice, as well as output cache

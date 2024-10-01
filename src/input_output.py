@@ -280,7 +280,7 @@ class Buffer():
 
     def update(self, data):
         assert len(data.shape) == 1, "only accepts 1d input"
-        assert self.buf_idx + data.shape[0] < self.buffer.shape[0]
+        assert self.buf_idx + data.shape[0] < self.buffer.shape[0], f"{self.buf_idx + data.shape[0]} {self.buffer.shape[0]}"
         self.buffer[self.buf_idx:self.buf_idx+data.shape[0]] = data
         self.buf_idx += data.shape[0]
 

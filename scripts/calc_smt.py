@@ -8,6 +8,9 @@ References:
 
 # NOTE: (also, increasing whitening tolerance decreases sparsity, could use stricter dictionary + maybe make those work better?)
 
+import warnings
+warnings.filterwarnings("ignore", message="Error importing huggingface_hub.hf_api: No module named 'yaml'")
+
 import torch
 from einops import rearrange
 import sys
