@@ -8,6 +8,8 @@ import subprocess
 import argparse
 import shutil
 import warnings
+from time import time
+import json
 
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
@@ -15,6 +17,7 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 from preprocessor import generate_dset
 from sparse_code import SparseCodeLayer, generate_dict
 from input_output import MemmapCSR
+from manifold_embedding import ManifoldEmbedLayer
 
 def generate_dset_dict_codes(args):
     # Run preprocessing, dictionary learning, + sparse coding in a separate process to reduce RAM usage. Python 
@@ -161,3 +164,51 @@ def generate_argparser():
     parser.add_argument('--proj_cache_proc', default=2, type=int, help='SMT embedding projection matmul cache generation workers')
 
     return parser
+
+
+
+def load_ckpt(path):
+    print("Loading checkpoint...", flush=True)
+    if path[-1] != "/":
+        path += "/"
+    
+    with open(path + "args.json", "r") as file:
+        ckpt_args = json.load(file)
+    parser = generate_argparser()
+    for action in parser._actions:
+        if action.required:
+            action.required = False
+    args = parser.parse_args(args=[], namespace=argparse.Namespace(**ckpt_args))
+
+    # clear out mmap dir
+    if os.path.exists(args.mmap_path):
+        shutil.rmtree(args.mmap_path)
+    os.mkdir(args.mmap_path)
+
+    basis = torch.load(path + "sc_basis.pt")
+    sc_layer = SparseCodeLayer(basis.shape[1], basis, args.gq_thresh)
+    smt_layer = ManifoldEmbedLayer(args, None, None, args.embed_dim, np.load(path + "smt_proj.npy"))
+    return args, sc_layer, smt_layer
+
+def save_ckpt(ckpt_path, args, sc_layer, smt_layer):
+    # generate directory for checkpoint
+    print("Saving checkpoint...", flush=True)
+    if not os.path.exists(ckpt_path):
+        os.mkdir(ckpt_path)
+        path = ckpt_path
+        if path[-1] != "/":
+            path += "/"
+    else:
+        # if path exists, generate a subdirectory
+        path = ckpt_path
+        if path[-1] != "/":
+            path += "/"
+        path += f"ckpt_{int(time())}/"
+        os.mkdir(path)
+
+    # save dictionary, embedding matrix, + a copy of the arguments
+    torch.save(sc_layer.basis, path + "sc_basis.pt")
+    np.save(path + "smt_proj.npy", smt_layer.projection)
+    with open(path + "args.json", "w") as file:
+        json.dump(vars(args), file, indent=4)
+

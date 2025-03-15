@@ -12,7 +12,7 @@ from ctypes_interface import coo2csr_param, c_impl_available
 
 def mmap_file_init(filename, data, flush=True):
     """Create a file that contains the given data."""
-    assert not os.path.exists(filename)
+    assert not os.path.exists(filename), f"Duplicate file: {filename}"
     with open(filename, 'wb') as fid:
         fid.write(data)
         if flush:

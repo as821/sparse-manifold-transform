@@ -21,7 +21,7 @@ sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 from preprocessor import ImagePreprocessor
 from manifold_embedding import ManifoldEmbedLayer
 from diff_op import construct_diff_op
-from util import generate_dset_dict_codes, generate_argparser, validate_args
+from util import generate_dset_dict_codes, generate_argparser, validate_args, save_ckpt
 from input_output import mmap_csr_cleanup
 from classifier import test_set_classify
 
@@ -53,7 +53,7 @@ def main(args):
     img_embed = ImagePreprocessor.aggregate_image_embed(betas)
 
     print("Test set accuracy: ", test_set_classify(args, dset, sc_layer, smt_layer, img_embed, img_label))
-
+    save_ckpt("/home/astange/smt_ckpt", args, sc_layer, smt_layer)
 
 if __name__ == "__main__":
     start_time = time.time()
