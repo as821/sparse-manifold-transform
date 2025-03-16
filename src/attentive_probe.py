@@ -63,7 +63,7 @@ def train_val(net, data_loader, train_optimizer, epoch):
     )
 
 
-def train_classifier_model(train_embed, test_embed, train_labels, test_labels, batch_size=512, epochs=50, lr=1e-2, save_path=None, save_name=None):
+def train_classifier_model(train_embed, test_embed, train_labels, test_labels, baseline=False, batch_size=512, epochs=50, lr=1e-2, save_path=None, save_name=None):
     top_acc = 0.0
 
     train_loader = DataLoader(CustomDataset(train_embed, train_labels), batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
@@ -71,7 +71,7 @@ def train_classifier_model(train_embed, test_embed, train_labels, test_labels, b
 
     # only fully connected requires grad
     torch.set_float32_matmul_precision('high')
-    model = AttentionPoolingClassifier(train_embed.shape[-1], 10)
+    model = Net(train_embed.shape[-1], 10, baseline)
     model = model.cuda()
     model = torch.compile(model)
 
@@ -98,6 +98,23 @@ def train_classifier_model(train_embed, test_embed, train_labels, test_labels, b
             torch.save(model.state_dict(), save_str)
 
     return model, top_acc
+
+
+class Net(nn.Module):
+    def __init__(self, dim, n_class, baseline):
+        super().__init__()
+        self.baseline = baseline
+        if self.baseline:
+            dim = 384       # TODO: shouldn't hardcode these
+            self.fc = nn.Linear(108, dim, bias=False)
+        self.probe = AttentionPoolingClassifier(dim, n_class)
+    
+    def forward(self, x):
+        if self.baseline:
+            x = self.fc(x)
+        return self.probe(x)
+
+
 
 # https://github.com/apple/ml-aim/blob/cb4171a25253dff87237f5fd5ee16fc633667d4f/aim-v1/aim/v1/torch/layers.py#L343
 class AttentionPoolingClassifier(nn.Module):
