@@ -6,26 +6,35 @@ import torchvision
 import torchvision.transforms as transforms
 import resource
 import numpy as np
+import time
+
+import pdb
 
 from matrix_utils import mx_frac_pow, torch_force_symmetric
 
-def generate_dset(args, split='train', train_set=None):
+def generate_dset(args, split='train', train_set=None, whiten_op=None, unwhiten_op=None):
     # Select and generate dataset
     if args.dataset == "mnist":
-        dset = ImagePreprocessor(args, torchvision.datasets.MNIST, split=split, n_channels=1, train_set=train_set)
+        if train_set is None:
+            dset = ImagePreprocessor(args, torchvision.datasets.MNIST, split=split, n_channels=1, whiten_op=whiten_op, unwhiten_op=unwhiten_op)
+        else:
+            assert whiten_op is None and unwhiten_op is None
+            dset = ImagePreprocessor(args, torchvision.datasets.MNIST, split=split, n_channels=1, whiten_op=train_set.whiten_op, unwhiten_op=train_set.unwhiten_op)
     elif args.dataset == "cifar10":
-        dset = ImagePreprocessor(args, torchvision.datasets.CIFAR10, split=split, train_set=train_set)
+        if train_set is None:
+            dset = ImagePreprocessor(args, torchvision.datasets.CIFAR10, split=split, whiten_op=whiten_op, unwhiten_op=unwhiten_op)
+        else:
+            assert whiten_op is None and unwhiten_op is None
+            dset = ImagePreprocessor(args, torchvision.datasets.CIFAR10, split=split, whiten_op=train_set.whiten_op, unwhiten_op=train_set.unwhiten_op)
     else:
         raise NotImplementedError
     return dset
 
 
 class ImagePreprocessor():
-    def __init__(self, args, dset_obj, split='train', n_channels=None, train_set=None):
+    def __init__(self, args, dset_obj, split='train', n_channels=None, whiten_op=None, unwhiten_op=None):
         self.args = args
         assert split in ['train', 'test']
-        if train_set is not None:
-            assert split == 'test'
         self.split = split
         trans = [transforms.ToTensor()]
         if args.grayscale_only:
@@ -51,9 +60,10 @@ class ImagePreprocessor():
         self.unwhiten_op = None
         self.context_sz = args.context_sz
 
-        if train_set:
-            self.whiten_op = train_set.whiten_op
-            self.unwhiten_op = train_set.unwhiten_op
+        if whiten_op is not None:
+            assert unwhiten_op is not None
+            self.whiten_op = whiten_op
+            self.unwhiten_op = unwhiten_op
 
         self.patch_cpy = None
         self.c_means = None
@@ -62,6 +72,14 @@ class ImagePreprocessor():
         # Increase system limit on number of open files (limit "too many open files" errors during parallelization)
         # _, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (65536*16, 65536*16))
+
+        # Calculate context size for each patch location
+        # NOTE: patches are stored in row-major order. x is used to index rows and y is used to index columns
+        self.context_sz_mx = torch.zeros(size=(self.n_patch_per_dim, self.n_patch_per_dim))
+        for x in range(self.n_patch_per_dim):
+            for y in range(self.n_patch_per_dim):
+                self.context_sz_mx[x, y] = len(_context(x, y, self.n_patch_per_dim, self.context_sz)) + 1
+
 
     def _context_mean(self, patches):
         """Calculate mean of context patches for each patch in each image."""
@@ -77,19 +95,13 @@ class ImagePreprocessor():
         conv.weight.data.fill_(1)
         conv.bias.data.fill_(0)
 
-        # Calculate context size for each patch location
-        # NOTE: patches are stored in row-major order. x is used to index rows and y is used to index columns
-        context_sz = torch.zeros(size=(self.n_patch_per_dim, self.n_patch_per_dim))
-        for x in range(self.n_patch_per_dim):
-            for y in range(self.n_patch_per_dim):
-                context_sz[x, y] = len(_context(x, y, self.n_patch_per_dim, self.context_sz)) + 1
-
         # Apply conv. to all images + patches to get contextual sums
         tmp = rearrange(patches, "a b c d e -> a (d e) b c")
         if torch.cuda.is_available():
             conv = conv.to("cuda:0", non_blocking=True)
 
         # Perform means per-channel, treat different channels like different batches
+        # TODO: treats all channels as the same!! --> should be doing this per channel
         res = torch.zeros(size=(tmp.shape[0], 1, tmp.shape[2], tmp.shape[3]), dtype=patches.dtype)
         chnk = 300
         for start in tqdm(range(0, tmp.shape[0], chnk)):     # process each image separately
@@ -99,7 +111,7 @@ class ImagePreprocessor():
                 tmp_slice = tmp_slice.to("cuda:0", non_blocking=True)
             res[start:end] = conv(tmp_slice.float()).to('cpu').type(patches.dtype)
 
-        ctx_means = res / (context_sz.unsqueeze(0).unsqueeze(1) * self.input_patch_dim)
+        ctx_means = res / (self.context_sz_mx.unsqueeze(0).unsqueeze(1) * self.input_patch_dim)
         return ctx_means.squeeze().unsqueeze(-1).unsqueeze(-1)
 
     def _calc_whitening(self, patches):
@@ -235,6 +247,44 @@ class ImagePreprocessor():
         betas = betas[:, :, :sz, :sz]
         if torch.cuda.is_available(): torch.cuda.empty_cache()
         return torch.flatten(betas, start_dim=1)
+
+
+    def get_single_image(self, idx):
+        # Return a single preprocessed image
+        assert self.whiten_op is not None and self.unwhiten_op is not None
+        assert idx < len(self.dataset)
+
+        t0 = time.time()
+
+        sample = self.dataset[idx]
+        label = sample[1]
+        
+        patches = torch.nn.functional.unfold(sample[0], self.args.patch_sz).clone()
+        patches = rearrange(patches, "(a b) (c d) -> c d b a", a=self.n_inp_channels, c=self.n_patch_per_dim, d=self.n_patch_per_dim)
+
+        t1 = time.time()
+
+        # TODO: this should be per-channel!!
+        # context size == image size, keep things simple for now
+        assert self.context_sz == 32
+        patches = patches - patches.mean()
+
+        t2 = time.time()
+
+        # Apply whitening operator + normalize
+        patches = rearrange(patches, "b c d e -> (b c) (d e)")
+        patches = patches.T
+        patches = self.whiten_op @ patches 
+        patches += 1e-20          # do not allow any patch to have a zero norm representation
+        norm = torch.linalg.vector_norm(patches, ord=2, dim=0)
+        patches /= norm
+
+        t3 = time.time()
+        # print(f"{t3 - t0}: {t1 - t0} {t2 - t1} {t3 - t2}")
+
+        return patches, label
+
+
 
 def _context(x, y, n_patches, context_sz):
     """Given the index of a patch in the image, return the indices of its neighbors (context). DOES NOT include the given index."""

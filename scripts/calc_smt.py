@@ -53,7 +53,7 @@ def main(args):
     img_embed = ImagePreprocessor.aggregate_image_embed(betas)
 
     print("Test set accuracy: ", test_set_classify(args, dset, sc_layer, smt_layer, img_embed, img_label))
-    save_ckpt("/home/astange/smt_ckpt", args, sc_layer, smt_layer)
+    save_ckpt("/home/astange/smt_ckpt", args, sc_layer, smt_layer, dset)
 
 if __name__ == "__main__":
     start_time = time.time()

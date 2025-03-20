@@ -188,9 +188,13 @@ def load_ckpt(path):
     basis = torch.load(path + "sc_basis.pt")
     sc_layer = SparseCodeLayer(basis.shape[1], basis, args.gq_thresh)
     smt_layer = ManifoldEmbedLayer(args, None, None, args.embed_dim, np.load(path + "smt_proj.npy"))
-    return args, sc_layer, smt_layer
+    
+    whiten_op = torch.load(path + "whiten_op.pt")
+    unwhiten_op = torch.load(path + "unwhiten_op.pt")
+    
+    return args, sc_layer, smt_layer, whiten_op, unwhiten_op
 
-def save_ckpt(ckpt_path, args, sc_layer, smt_layer):
+def save_ckpt(ckpt_path, args, sc_layer, smt_layer, dset):
     # generate directory for checkpoint
     print("Saving checkpoint...", flush=True)
     if not os.path.exists(ckpt_path):
@@ -211,4 +215,8 @@ def save_ckpt(ckpt_path, args, sc_layer, smt_layer):
     np.save(path + "smt_proj.npy", smt_layer.projection)
     with open(path + "args.json", "w") as file:
         json.dump(vars(args), file, indent=4)
+
+    # save whiten + unwhiten operators from the training set
+    torch.save(dset.whiten_op, path + "whiten_op.pt")
+    torch.save(dset.unwhiten_op, path + "unwhiten_op.pt")
 

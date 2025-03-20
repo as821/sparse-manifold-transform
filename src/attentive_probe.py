@@ -63,17 +63,17 @@ def train_val(net, data_loader, train_optimizer, epoch):
     )
 
 
-def train_classifier_model(train_embed, test_embed, train_labels, test_labels, baseline=False, batch_size=512, epochs=50, lr=1e-2, save_path=None, save_name=None):
+def train_classifier_model(train_set, test_set, baseline=False, batch_size=512, epochs=50, lr=1e-2, save_path=None, save_name=None):
     top_acc = 0.0
 
-    train_loader = DataLoader(CustomDataset(train_embed, train_labels), batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
-    test_loader = DataLoader(CustomDataset(test_embed, test_labels), batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
+    train_loader = DataLoader(CustomDataset(train_set), batch_size=batch_size, shuffle=True, num_workers=0)
+    test_loader = DataLoader(CustomDataset(test_set), batch_size=batch_size, shuffle=False, num_workers=0)
 
     # only fully connected requires grad
     torch.set_float32_matmul_precision('high')
-    model = Net(train_embed.shape[-1], 10, baseline)
+    model = Net(384, 10, baseline)
     model = model.cuda()
-    model = torch.compile(model)
+    # model = torch.compile(model)
 
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6, fused=True)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
@@ -162,14 +162,15 @@ class AttentionPoolingClassifier(nn.Module):
 
 
 class CustomDataset(torch.utils.data.Dataset):
-    def __init__(self, data, labels):
-        self.data = data
-        self.labels = labels
+    def __init__(self, dset):
+        self.dset = dset
     
     def __len__(self):
-        return self.data.shape[0]
+        return len(self.dset.dataset)
     
     def __getitem__(self, idx):
-        return self.data[idx], self.labels[idx]
+        with torch.no_grad():
+            data, label = self.dset.get_single_image(idx)
+            return data.T, label
 
 
