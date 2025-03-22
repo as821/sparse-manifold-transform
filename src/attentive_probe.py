@@ -63,15 +63,19 @@ def train_val(net, data_loader, train_optimizer, epoch):
     )
 
 
-def train_classifier_model(train_set, test_set, baseline=False, batch_size=512, epochs=50, lr=1e-2, save_path=None, save_name=None):
+def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, batch_size=512, epochs=50, lr=1e-2, save_path=None, save_name=None):
     top_acc = 0.0
+    baseline = sc_layer is None and smt_layer is None
+    sc_none = sc_layer is None
+    smt_none = smt_layer is None
+    assert (sc_none and smt_none) or (not sc_none and not smt_none)
 
-    train_loader = DataLoader(CustomDataset(train_set), batch_size=batch_size, shuffle=True, num_workers=0)
-    test_loader = DataLoader(CustomDataset(test_set), batch_size=batch_size, shuffle=False, num_workers=0)
+    train_loader = DataLoader(CustomDataset(train_set), batch_size=batch_size, shuffle=True, num_workers=24, pin_memory=True)
+    test_loader = DataLoader(CustomDataset(test_set), batch_size=batch_size, shuffle=False, num_workers=24, pin_memory=True)
 
     # only fully connected requires grad
     torch.set_float32_matmul_precision('high')
-    model = Net(384, 10, baseline)
+    model = Net(384, 10, sc_layer, smt_layer, sc_args)
     model = model.cuda()
     # model = torch.compile(model)
 
@@ -101,17 +105,28 @@ def train_classifier_model(train_set, test_set, baseline=False, batch_size=512, 
 
 
 class Net(nn.Module):
-    def __init__(self, dim, n_class, baseline):
+    def __init__(self, dim, n_class, sc_layer, smt_layer, sc_args):
         super().__init__()
-        self.baseline = baseline
+        self.baseline = sc_layer is None or smt_layer is None
+        self.sc_layer = sc_layer
+        self.sc_args = sc_args
+        self.smt_layer = smt_layer        
+        self.probe = AttentionPoolingClassifier(dim, n_class)
         if self.baseline:
             dim = 384       # TODO: shouldn't hardcode these
             self.fc = nn.Linear(108, dim, bias=False)
-        self.probe = AttentionPoolingClassifier(dim, n_class)
+        else:
+            sc_layer.basis = sc_layer.basis.to("cuda", non_blocking=True)
+            smt_layer.projection = smt_layer.projection.to("cuda", non_blocking=True)
     
     def forward(self, x):
         if self.baseline:
+            x = x.permute(0, 2, 1)
             x = self.fc(x)
+        else:
+            with torch.no_grad():
+                x = self.smt_layer(self.sc_layer(self.sc_args, x, test=True, dense=True), dense=True)
+                x = x.permute((0, 2, 1))
         return self.probe(x)
 
 
@@ -170,7 +185,6 @@ class CustomDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         with torch.no_grad():
-            data, label = self.dset.get_single_image(idx)
-            return data.T, label
+            return self.dset.get_single_image(idx)
 
 

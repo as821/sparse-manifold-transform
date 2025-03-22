@@ -14,14 +14,18 @@ from slice import PreMatmulCacheGen, csr_col_slice, csr_col_slice_transpose
 from loss_mx_calc import LossMatrixCalc
 from ctypes_interface import c_impl_available
 
+import pdb
+
 class ManifoldEmbedLayer:
-    def __init__(self, args, alphas, diff_op, embed_dim, proj=None):
+    def __init__(self, args, alphas, diff_op, embed_dim, proj=None, dense=False):
         """Given a set of vectorized inputs and an associated differential operator, calculate their manifold embedding."""
         if proj is not None:
             # loading from checkpoint (convert input projection matrix to mmap)
             t_fname = args.mmap_path + "/smt_proj_dense_T.bin"
             mmap_file_init(t_fname, proj)
             self.projection = np.memmap(t_fname, shape=proj.shape, dtype=proj.dtype)
+            if dense:
+                self.projection = torch.from_numpy(self.projection)
             self.embed_dim = embed_dim
             self.args = args
             return
@@ -187,21 +191,27 @@ class ManifoldEmbedLayer:
         evals = evals[indices]       
         return evecs[:, indices].transpose()
 
-    def __call__(self, x):
+    def __call__(self, x, dense=False):
         """Apply calculated SMT to given inputs, return their embeddings."""        
-        # Want to calculate self.projection @ x, but spmm requires "sparse @ dense" format so instead we calculate (x.T @ self.projection.T).T
-        cache = self._gen_slice_cache(self.args, x, self.args.proj_col_chunk, col_slice=True, transpose_2d_slice=True)        # column-slicing, but also transpose slices
-        ssm = GpuSparseMatmul(self.projection, cache, False, self.args.proj_row_chunk, dense_matmul=True, mmap_path=self.args.mmap_path, a_shape=x.shape)
-        ssm.run(daemon=True)
-        beta_flat = ssm.result
-        
-        # L2 normalizes embeddings as in (2)
-        print("Normalizing SMT embeddings...", flush=True)
-        chnk_sz = int(beta_flat.shape[1] / 10)
-        for start in tqdm(range(0, beta_flat.shape[1], chnk_sz)):
-            end = min(beta_flat.shape[1], start + chnk_sz)
-            beta_flat[:, start:end] /= (np.linalg.norm(beta_flat[:, start:end], ord=2, axis=0) + 1e-20)
-        return beta_flat
+    
+        if dense:
+            beta_flat = self.projection @ x
+            beta_flat /= (torch.linalg.vector_norm(beta_flat, dim=1).unsqueeze(1) + 1e-10)
+            return beta_flat
+        else:
+            # Want to calculate self.projection @ x, but spmm requires "sparse @ dense" format so instead we calculate (x.T @ self.projection.T).T
+            cache = self._gen_slice_cache(self.args, x, self.args.proj_col_chunk, col_slice=True, transpose_2d_slice=True)        # column-slicing, but also transpose slices
+            ssm = GpuSparseMatmul(self.projection, cache, False, self.args.proj_row_chunk, dense_matmul=True, mmap_path=self.args.mmap_path, a_shape=x.shape)
+            ssm.run(daemon=True)
+            beta_flat = ssm.result
+            
+            # L2 normalizes embeddings as in (2)
+            print("Normalizing SMT embeddings...", flush=True)
+            chnk_sz = int(beta_flat.shape[1] / 10)
+            for start in tqdm(range(0, beta_flat.shape[1], chnk_sz)):
+                end = min(beta_flat.shape[1], start + chnk_sz)
+                beta_flat[:, start:end] /= (np.linalg.norm(beta_flat[:, start:end], ord=2, axis=0) + 1e-10)
+            return beta_flat
 
 
 

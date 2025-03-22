@@ -167,7 +167,7 @@ def generate_argparser():
 
 
 
-def load_ckpt(path):
+def load_ckpt(path, dense=False):
     print("Loading checkpoint...", flush=True)
     if path[-1] != "/":
         path += "/"
@@ -187,7 +187,7 @@ def load_ckpt(path):
 
     basis = torch.load(path + "sc_basis.pt")
     sc_layer = SparseCodeLayer(basis.shape[1], basis, args.gq_thresh)
-    smt_layer = ManifoldEmbedLayer(args, None, None, args.embed_dim, np.load(path + "smt_proj.npy"))
+    smt_layer = ManifoldEmbedLayer(args, None, None, args.embed_dim, np.load(path + "smt_proj.npy"), dense=dense)
     
     whiten_op = torch.load(path + "whiten_op.pt")
     unwhiten_op = torch.load(path + "unwhiten_op.pt")

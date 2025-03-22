@@ -1,5 +1,5 @@
-import torch
 import numpy as np
+import torch
 from tqdm import tqdm
 import scipy.sparse as sp
 import random
@@ -12,6 +12,8 @@ from time import time
 if torch.cuda.is_available():
     import cupy as cp
 
+import pdb
+
 class SparseCodeLayer:
     """Encode inputs in the given dictionary basis. Optionally, generate a random basis from the first data passed to this object."""
     def __init__(self, dict_sz, phi, gq_thresh, idx_list=None):
@@ -20,10 +22,13 @@ class SparseCodeLayer:
         self.gq_thresh = gq_thresh
         self.idx_list = idx_list
 
-    def __call__(self, args, data, test=False):
+    def __call__(self, args, data, test=False, dense=False):
         # Encode the given data in this object's dictionary basis
         assert self.basis.shape[1] == self.dict_sz
-        return _general_sparse_coding(args, data, self.basis, self.gq_thresh, test=test)
+        if dense:
+            return _general_sparse_coding_dense(args, data, self.basis, self.gq_thresh, test=test)
+        else:
+            return _general_sparse_coding(args, data, self.basis, self.gq_thresh, test=test)
 
 def _coo_update_file(coo_data, coo_row, coo_col, result):
     coo_data.update(result.data)
@@ -80,6 +85,30 @@ def _general_sparse_coding(args, data, phi, gq_thresh, test=False):
     return codes
 
 
+def _general_sparse_coding_dense(args, data, phi, gq_thresh, test=False):
+    """Implement k-sparse coding for the given data and dictionary."""
+    # Data and phi are both L2 normalized, so their cosine similarity is their dot product
+    assert len(data.shape) == 3
+    cosine_sim = phi.T @ data
+
+    # Ensure that each data point has at least 1 entry >= thresh (when applicable)
+    if test or args.zero_code_disable:        
+        cosine_sim = cosine_sim.permute((0, 2, 1))
+
+        B, N, C = cosine_sim.shape
+        max_indices = cosine_sim.argmax(dim=2)
+        batch_indices = torch.arange(B, device=cosine_sim.device).view(B, 1).expand(B, N)
+        n_indices = torch.arange(N, device=cosine_sim.device).view(1, N).expand(B, N)
+        cosine_sim[batch_indices, n_indices, max_indices] = gq_thresh
+        
+        cosine_sim = cosine_sim.permute((0, 2, 1))
+
+    # only contains 0/1 entries
+    # codes = torch.zeros_like(cosine_sim)
+    # codes[cosine_sim >= gq_thresh] = 1
+    cosine_sim[cosine_sim >= gq_thresh] = 1
+    cosine_sim[cosine_sim < gq_thresh] = 0
+    return cosine_sim
 
 class SparseWorkSlice():
     def __init__(self, batch, test, thresh, offset):
@@ -114,9 +143,9 @@ class SparseWorkSlice():
 
         running = profile_log(profile, running, "set one")
 
-        col_sums = codes.sum(axis=0)
-        ind = col_sums > 0
-        running = profile_log(profile, running, "sum")
+        # col_sums = codes.sum(axis=0)
+        # ind = col_sums > 0
+        # running = profile_log(profile, running, "sum")
 
         if torch.cuda.is_available():
             # performs dense -> COO conversion on the GPU
