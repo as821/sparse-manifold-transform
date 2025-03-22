@@ -10,6 +10,8 @@ from tqdm import tqdm
 from typing import OrderedDict
 import einops
 import pdb
+import wandb
+
 
 
 
@@ -32,7 +34,7 @@ def train_val(net, data_loader, train_optimizer, epoch):
             out = net(data)
             loss = loss_criterion(out, target)
             if is_train:
-                train_optimizer.zero_grad()
+                train_optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 train_optimizer.step()
 
@@ -63,7 +65,22 @@ def train_val(net, data_loader, train_optimizer, epoch):
     )
 
 
-def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, batch_size=512, epochs=50, lr=1e-2, save_path=None, save_name=None):
+def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, probe_args, batch_size=512, epochs=50, lr=1e-2, weight_decay=1e-6, save_path=None, save_name=None):
+    if probe_args.wandb:
+        wandb.init(config={
+            "batch_size": batch_size,
+            "lr": lr,
+            "epochs": epochs,
+            "smt_embed_dim" : sc_args.embed_dim,
+            "smt_ckpt" : probe_args.path,
+            "smt_patch_sz" : sc_args.patch_sz,
+            "smt_ctx_sz" : sc_args.context_sz,
+            "smt_dict_sz" : sc_args.dict_sz,
+            "smt_gq_thresh" : sc_args.gq_thresh,
+            "smt_dict_thresh" : sc_args.dict_thresh,
+            "smt_train_sz" : sc_args.samples,
+        }, project="smt_probe")        
+
     top_acc = 0.0
     baseline = sc_layer is None and smt_layer is None
     sc_none = sc_layer is None
@@ -75,11 +92,14 @@ def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, ba
 
     # only fully connected requires grad
     torch.set_float32_matmul_precision('high')
-    model = Net(384, 10, sc_layer, smt_layer, sc_args)
+    model = Net(sc_args.embed_dim, 10, sc_layer, smt_layer, sc_args)
     model = model.cuda()
     # model = torch.compile(model)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6, fused=True)
+    if probe_args.wandb:
+        wandb.watch(model, log_freq=5)
+
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay, fused=True)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     if save_path is not None and save_name is None:
@@ -93,6 +113,15 @@ def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, ba
         # test one epoch
         test_loss, test_acc_1, test_acc_5 = train_val(model, test_loader, None, epoch)
         scheduler.step()
+
+        if probe_args.wandb:
+            vis_dict = {}
+            vis_dict["train_loss"] = train_loss
+            vis_dict["train_acc1"] = train_acc_1
+            vis_dict["test_loss"] = test_loss
+            vis_dict["test_acc1"] = test_acc_1
+            vis_dict["lr"] = scheduler.get_last_lr()[0]
+            wandb.log(vis_dict, step=epoch)
 
         if test_acc_1 > top_acc:
             top_acc = test_acc_1
@@ -113,8 +142,12 @@ class Net(nn.Module):
         self.smt_layer = smt_layer        
         self.probe = AttentionPoolingClassifier(dim, n_class)
         if self.baseline:
-            dim = 384       # TODO: shouldn't hardcode these
-            self.fc = nn.Linear(108, dim, bias=False)
+            # NOTE: requires batch size 256
+            self.fc = nn.Sequential(
+                nn.Linear(108, 8192, bias=False),
+                nn.ReLU(),
+                nn.Linear(8192, dim, bias=False)
+            )
         else:
             sc_layer.basis = sc_layer.basis.to("cuda", non_blocking=True)
             smt_layer.projection = smt_layer.projection.to("cuda", non_blocking=True)
