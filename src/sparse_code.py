@@ -91,17 +91,16 @@ def _general_sparse_coding_dense(args, data, phi, gq_thresh, test=False):
     assert len(data.shape) == 3
     cosine_sim = phi.T @ data
 
+    # NOTE: removing this improves attentive probe performance >1%
     # Ensure that each data point has at least 1 entry >= thresh (when applicable)
-    if test or args.zero_code_disable:        
-        cosine_sim = cosine_sim.permute((0, 2, 1))
-
-        B, N, C = cosine_sim.shape
-        max_indices = cosine_sim.argmax(dim=2)
-        batch_indices = torch.arange(B, device=cosine_sim.device).view(B, 1).expand(B, N)
-        n_indices = torch.arange(N, device=cosine_sim.device).view(1, N).expand(B, N)
-        cosine_sim[batch_indices, n_indices, max_indices] = gq_thresh
-        
-        cosine_sim = cosine_sim.permute((0, 2, 1))
+    # if test or args.zero_code_disable:        
+    #     cosine_sim = cosine_sim.permute((0, 2, 1))
+    #     B, N, C = cosine_sim.shape
+    #     max_indices = cosine_sim.argmax(dim=2)
+    #     batch_indices = torch.arange(B, device=cosine_sim.device).view(B, 1).expand(B, N)
+    #     n_indices = torch.arange(N, device=cosine_sim.device).view(1, N).expand(B, N)
+    #     cosine_sim[batch_indices, n_indices, max_indices] = gq_thresh
+    #     cosine_sim = cosine_sim.permute((0, 2, 1))
 
     # only contains 0/1 entries
     # codes = torch.zeros_like(cosine_sim)
