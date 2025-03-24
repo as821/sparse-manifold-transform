@@ -70,7 +70,7 @@ def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, pr
         wandb.init(config={
             "batch_size": probe_args.batch_size,
             "lr": probe_args.lr,
-            "final_lr": probe_args.finallr,
+            "final_lr": probe_args.final_lr,
             "n_probe_head": probe_args.n_probe_head,
             "use_batch_norm": probe_args.bn,
             "epochs": probe_args.epochs,
