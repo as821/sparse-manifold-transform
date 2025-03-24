@@ -70,10 +70,14 @@ def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, pr
         wandb.init(config={
             "batch_size": probe_args.batch_size,
             "lr": probe_args.lr,
+            "final_lr": probe_args.finallr,
+            "n_probe_head": probe_args.n_probe_head,
+            "use_batch_norm": probe_args.bn,
             "epochs": probe_args.epochs,
             "weight_decay" : probe_args.weight_decay,
-            "smt_embed_dim" : sc_args.embed_dim,
             "smt_ckpt" : probe_args.path,
+            
+            "smt_embed_dim" : sc_args.embed_dim,
             "smt_patch_sz" : sc_args.patch_sz,
             "smt_ctx_sz" : sc_args.context_sz,
             "smt_dict_sz" : sc_args.dict_sz,
@@ -93,7 +97,7 @@ def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, pr
 
     # only fully connected requires grad
     torch.set_float32_matmul_precision('high')
-    model = Net(sc_args.embed_dim, 10, sc_layer, smt_layer, sc_args)
+    model = Net(sc_args.embed_dim, 10, sc_layer, smt_layer, sc_args, probe_args)
     model = model.cuda()
     model = torch.compile(model)
 
@@ -135,13 +139,16 @@ def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, pr
 
 
 class Net(nn.Module):
-    def __init__(self, dim, n_class, sc_layer, smt_layer, sc_args):
+    def __init__(self, dim, n_class, sc_layer, smt_layer, sc_args, probe_args):
         super().__init__()
         self.baseline = sc_layer is None or smt_layer is None
         self.sc_layer = sc_layer
         self.sc_args = sc_args
         self.smt_layer = smt_layer        
-        self.probe = AttentionPoolingClassifier(dim, n_class)
+        self.probe = AttentionPoolingClassifier(dim, n_class, 
+            num_heads=probe_args.n_probe_head,
+            use_batch_norm=probe_args.bn,
+        )
         if self.baseline:
             # NOTE: requires batch size 256
             self.fc = nn.Sequential(
@@ -187,15 +194,15 @@ class AttentionPoolingClassifier(nn.Module):
         self.v = nn.Linear(dim, dim, bias=qkv_bias)
         self.cls_token = nn.Parameter(torch.randn(1, num_queries, dim) * 0.02)
         self.linear = nn.Linear(dim, out_features, bias=linear_bias)
-        # self.bn = (
-        #     nn.BatchNorm1d(dim, affine=False, eps=1e-6)
-        #     if use_batch_norm
-        #     else nn.Identity()
-        # )
+        self.bn = (
+            nn.BatchNorm1d(dim, affine=False, eps=1e-6)
+            if use_batch_norm
+            else nn.Identity()
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, N, C = x.shape
-        # x = self.bn(x.transpose(-2, -1)).transpose(-2, -1)
+        x = self.bn(x.transpose(-2, -1)).transpose(-2, -1)
         cls_token = self.cls_token.expand(B, -1, -1)
 
         q = cls_token.reshape(B, self.num_queries, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
