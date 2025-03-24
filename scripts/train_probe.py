@@ -40,8 +40,9 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--final_lr", type=float, default=0)
     parser.add_argument("--weight_decay", type=float, default=1e-6)
-    parser.add_argument("--n_probe_head", type=int, default=50)
+    parser.add_argument("--n_probe_head", type=int, default=16)
     parser.add_argument('--bn', action="store_true")
+    parser.add_argument("--attn_dropout", type=float, default=0.0)
 
     main(parser.parse_args())
 

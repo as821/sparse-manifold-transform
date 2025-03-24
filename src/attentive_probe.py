@@ -148,6 +148,7 @@ class Net(nn.Module):
         self.probe = AttentionPoolingClassifier(dim, n_class, 
             num_heads=probe_args.n_probe_head,
             use_batch_norm=probe_args.bn,
+            attn_dropout=probe_args.attn_dropout
         )
         if self.baseline:
             # NOTE: requires batch size 256
@@ -184,6 +185,7 @@ class AttentionPoolingClassifier(nn.Module):
         qkv_bias: bool = False,
         linear_bias: bool = False,
         average_pool: bool = True,
+        attn_dropout: float = 0.0
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -194,6 +196,7 @@ class AttentionPoolingClassifier(nn.Module):
         self.v = nn.Linear(dim, dim, bias=qkv_bias)
         self.cls_token = nn.Parameter(torch.randn(1, num_queries, dim) * 0.02)
         self.linear = nn.Linear(dim, out_features, bias=linear_bias)
+        self.attn_dropout = attn_dropout
         self.bn = (
             nn.BatchNorm1d(dim, affine=False, eps=1e-6)
             if use_batch_norm
@@ -209,7 +212,7 @@ class AttentionPoolingClassifier(nn.Module):
         k = self.k(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
         v = self.v(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
 
-        x_cls = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+        x_cls = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_dropout)
         x_cls = x_cls.transpose(1, 2).reshape(B, self.num_queries, C)
         x_cls = x_cls.mean(dim=1) if self.average_pool else x_cls
 
