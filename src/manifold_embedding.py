@@ -191,6 +191,7 @@ class ManifoldEmbedLayer:
         evals = evals[indices]       
         return evecs[:, indices].transpose()
 
+    @torch.compiler.disable
     def __call__(self, x, dense=False):
         """Apply calculated SMT to given inputs, return their embeddings."""        
     

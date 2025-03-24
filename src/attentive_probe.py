@@ -65,12 +65,13 @@ def train_val(net, data_loader, train_optimizer, epoch):
     )
 
 
-def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, probe_args, batch_size=512, epochs=50, lr=1e-2, weight_decay=1e-6, save_path=None, save_name=None):
+def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, probe_args, save_path=None, save_name=None):
     if probe_args.wandb:
         wandb.init(config={
-            "batch_size": batch_size,
-            "lr": lr,
-            "epochs": epochs,
+            "batch_size": probe_args.batch_size,
+            "lr": probe_args.lr,
+            "epochs": probe_args.epochs,
+            "weight_decay" : probe_args.weight_decay,
             "smt_embed_dim" : sc_args.embed_dim,
             "smt_ckpt" : probe_args.path,
             "smt_patch_sz" : sc_args.patch_sz,
@@ -87,25 +88,25 @@ def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, pr
     smt_none = smt_layer is None
     assert (sc_none and smt_none) or (not sc_none and not smt_none)
 
-    train_loader = DataLoader(CustomDataset(train_set), batch_size=batch_size, shuffle=True, num_workers=24, pin_memory=True)
-    test_loader = DataLoader(CustomDataset(test_set), batch_size=batch_size, shuffle=False, num_workers=24, pin_memory=True)
+    train_loader = DataLoader(CustomDataset(train_set), batch_size=probe_args.batch_size, shuffle=True, num_workers=24, pin_memory=True, persistent_workers=True)
+    test_loader = DataLoader(CustomDataset(test_set), batch_size=probe_args.batch_size, shuffle=False, num_workers=24, pin_memory=True, persistent_workers=True)
 
     # only fully connected requires grad
     torch.set_float32_matmul_precision('high')
     model = Net(sc_args.embed_dim, 10, sc_layer, smt_layer, sc_args)
     model = model.cuda()
-    # model = torch.compile(model)
+    model = torch.compile(model)
 
     if probe_args.wandb:
         wandb.watch(model, log_freq=5)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay, fused=True)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    optimizer = optim.Adam(model.parameters(), lr=probe_args.lr, weight_decay=probe_args.weight_decay, fused=True)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=probe_args.epochs, eta_min=probe_args.final_lr)
 
     if save_path is not None and save_name is None:
         save_name = str(np.random.rand() * 1e5)
     print(save_name)
-    for epoch in range(1, epochs + 1):
+    for epoch in range(1, probe_args.epochs + 1):
         # train one epoch
         train_loss, train_acc_1, train_acc_5 = train_val(
             model, train_loader, optimizer, epoch

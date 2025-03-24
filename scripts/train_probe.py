@@ -34,6 +34,12 @@ if __name__ == "__main__":
     parser.add_argument('--path', type=str, default="/home/astange/smt_ckpt")
     parser.add_argument('--baseline', action="store_true")
     parser.add_argument('--wandb', action="store_true")
+
+    parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--lr", type=float, default=1e-2)
+    parser.add_argument("--final_lr", type=float, default=0)
+    parser.add_argument("--weight_decay", type=float, default=1e-6)
     
     main(parser.parse_args())
 

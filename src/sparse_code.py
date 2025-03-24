@@ -84,29 +84,22 @@ def _general_sparse_coding(args, data, phi, gq_thresh, test=False):
     if torch.cuda.is_available(): torch.cuda.empty_cache()
     return codes
 
-
+@torch.compiler.disable
 def _general_sparse_coding_dense(args, data, phi, gq_thresh, test=False):
     """Implement k-sparse coding for the given data and dictionary."""
     # Data and phi are both L2 normalized, so their cosine similarity is their dot product
     assert len(data.shape) == 3
     cosine_sim = phi.T @ data
 
-    # NOTE: removing this improves attentive probe performance >1%
-    # Ensure that each data point has at least 1 entry >= thresh (when applicable)
-    # if test or args.zero_code_disable:        
-    #     cosine_sim = cosine_sim.permute((0, 2, 1))
-    #     B, N, C = cosine_sim.shape
-    #     max_indices = cosine_sim.argmax(dim=2)
-    #     batch_indices = torch.arange(B, device=cosine_sim.device).view(B, 1).expand(B, N)
-    #     n_indices = torch.arange(N, device=cosine_sim.device).view(1, N).expand(B, N)
-    #     cosine_sim[batch_indices, n_indices, max_indices] = gq_thresh
-    #     cosine_sim = cosine_sim.permute((0, 2, 1))
+    mask = cosine_sim >= gq_thresh
+    cosine_sim[mask] = 1
+    mask = ~mask
+    cosine_sim[mask] = 0
 
-    # only contains 0/1 entries
-    # codes = torch.zeros_like(cosine_sim)
-    # codes[cosine_sim >= gq_thresh] = 1
-    cosine_sim[cosine_sim >= gq_thresh] = 1
-    cosine_sim[cosine_sim < gq_thresh] = 0
+    # cosine_sim.sub_(gq_thresh)
+    # torch.nn.functional.relu(cosine_sim, inplace=True)
+    # cosine_sim[cosine_sim > 0] = 1
+
     return cosine_sim
 
 class SparseWorkSlice():
