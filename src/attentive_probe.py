@@ -92,8 +92,8 @@ def train_classifier_model(train_set, test_set, sc_layer, smt_layer, sc_args, pr
     smt_none = smt_layer is None
     assert (sc_none and smt_none) or (not sc_none and not smt_none)
 
-    train_loader = DataLoader(CustomDataset(train_set), batch_size=probe_args.batch_size, shuffle=True, num_workers=24, pin_memory=True, persistent_workers=True)
-    test_loader = DataLoader(CustomDataset(test_set), batch_size=probe_args.batch_size, shuffle=False, num_workers=24, pin_memory=True, persistent_workers=True)
+    train_loader = DataLoader(CustomDataset(train_set, probe_args.stride), batch_size=probe_args.batch_size, shuffle=True, num_workers=24, pin_memory=True, persistent_workers=True)
+    test_loader = DataLoader(CustomDataset(test_set, probe_args.stride), batch_size=probe_args.batch_size, shuffle=False, num_workers=24, pin_memory=True, persistent_workers=True)
 
     # only fully connected requires grad
     torch.set_float32_matmul_precision('high')
@@ -221,14 +221,15 @@ class AttentionPoolingClassifier(nn.Module):
 
 
 class CustomDataset(torch.utils.data.Dataset):
-    def __init__(self, dset):
+    def __init__(self, dset, stride):
         self.dset = dset
+        self.stride = stride
     
     def __len__(self):
         return len(self.dset.dataset)
     
     def __getitem__(self, idx):
         with torch.no_grad():
-            return self.dset.get_single_image(idx)
+            return self.dset.get_single_image(idx, self.stride)
 
 

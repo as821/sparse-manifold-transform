@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 import resource
 import numpy as np
 import time
+import math
 
 import pdb
 
@@ -249,7 +250,7 @@ class ImagePreprocessor():
         return torch.flatten(betas, start_dim=1)
 
 
-    def get_single_image(self, idx):
+    def get_single_image(self, idx, stride=1):
         # Return a single preprocessed image
         assert self.whiten_op is not None and self.unwhiten_op is not None
         assert idx < len(self.dataset)
@@ -259,8 +260,10 @@ class ImagePreprocessor():
         sample = self.dataset[idx]
         label = sample[1]
         
-        patches = torch.nn.functional.unfold(sample[0], self.args.patch_sz).clone()
-        patches = rearrange(patches, "(a b) (c d) -> c d b a", a=self.n_inp_channels, c=self.n_patch_per_dim, d=self.n_patch_per_dim)
+        patches = torch.nn.functional.unfold(sample[0], self.args.patch_sz, stride=stride).clone()
+        n_patch_per_dim = int(math.sqrt(patches.shape[1]))
+        assert n_patch_per_dim ** 2 == patches.shape[1]
+        patches = rearrange(patches, "(a b) (c d) -> c d b a", a=self.n_inp_channels, c=n_patch_per_dim, d=n_patch_per_dim)
 
         t1 = time.time()
 

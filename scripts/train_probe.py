@@ -43,6 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_probe_head", type=int, default=16)
     parser.add_argument('--bn', action="store_true")
     parser.add_argument("--attn_dropout", type=float, default=0.0)
+    parser.add_argument("--stride", type=int, default=1)
 
     main(parser.parse_args())
 
