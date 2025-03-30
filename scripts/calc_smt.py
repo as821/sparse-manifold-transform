@@ -21,12 +21,47 @@ sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 from preprocessor import ImagePreprocessor
 from manifold_embedding import ManifoldEmbedLayer
 from diff_op import construct_diff_op
-from util import generate_dset_dict_codes, generate_argparser, validate_args, save_ckpt
+from util import generate_dset_dict_codes, generate_argparser, validate_args, save_ckpt, generate_dset
 from input_output import mmap_csr_cleanup
 from classifier import test_set_classify
 
+import pdb
+
 
 def main(args):
+    # set up dataset
+    dset = generate_dset(args)
+
+    # calculate whitening + unwhitening matrices
+    print("Calculating whitening operator")
+    dset.calc_whitening()
+
+
+    # TODO: generate dictionary
+
+
+
+    # TODO: calculate inverse square root covariance matrix
+
+
+
+    # TODO: calculate core ADD^TA^T loss matrix
+
+
+
+    # TODO: compute complete loss matrix, solve, get projection matrix
+
+
+
+    # TODO: save checkpoint
+
+
+
+
+    # TODO: optionally, run classifier
+
+
+
     # Generate dataset and sparse codes for images
     dset, alphas, sc_layer, img_label = generate_dset_dict_codes(args)
 

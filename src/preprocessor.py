@@ -66,10 +66,6 @@ class ImagePreprocessor():
             self.whiten_op = whiten_op
             self.unwhiten_op = unwhiten_op
 
-        self.patch_cpy = None
-        self.c_means = None
-        self.norm = None
-
         # Increase system limit on number of open files (limit "too many open files" errors during parallelization)
         # _, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (65536*16, 65536*16))
@@ -81,6 +77,33 @@ class ImagePreprocessor():
             for y in range(self.n_patch_per_dim):
                 self.context_sz_mx[x, y] = len(_context(x, y, self.n_patch_per_dim, self.context_sz)) + 1
 
+    def img_to_centered_patches(self, img, stride):
+        patches = torch.nn.functional.unfold(img, self.args.patch_sz, stride=stride).clone()
+        n_patch_per_dim = int(math.sqrt(patches.shape[1]))
+        assert n_patch_per_dim ** 2 == patches.shape[1]
+        patches = rearrange(patches, "(a b) (c d) -> c d b a", a=self.n_inp_channels, c=n_patch_per_dim, d=n_patch_per_dim)
+
+        # TODO: this should be per-channel!!
+        # context size == image size, keep things simple for now
+        assert self.context_sz == 32
+        patches = patches - patches.mean()
+
+        patches = rearrange(patches, "b c d e -> (b c) (d e)")
+        return patches
+
+    def apply_and_reduce(self, func, stride=1):
+        # Generate image patches for an image, apply the given function, then perform a matrix multiplication over the dataset
+        # Ex. calculating the covariance matrix over the patches
+        out = None
+        for idx in tqdm(range(self.args.samples)):
+            patches = self.img_to_centered_patches(self.train_set_image(idx)[0], stride)
+            if func is not None:
+                patches = func(patches)
+            if out is None:
+                out = patches.T @ patches
+            else:
+                out += patches.T @ patches
+        return out
 
     def _context_mean(self, patches):
         """Calculate mean of context patches for each patch in each image."""
@@ -115,6 +138,24 @@ class ImagePreprocessor():
         ctx_means = res / (self.context_sz_mx.unsqueeze(0).unsqueeze(1) * self.input_patch_dim)
         return ctx_means.squeeze().unsqueeze(-1).unsqueeze(-1)
 
+    def calc_whitening(self, stride=1):
+        # Calculate mean for each patch channel
+        mean = torch.zeros((self.n_inp_channels * self.args.patch_sz * self.args.patch_sz))
+        for idx in tqdm(range(self.args.samples)):
+            mean += self.img_to_centered_patches(self.train_set_image(idx)[0], stride).sum(dim=0)
+        mean /= (self.args.samples * self.n_patch_per_img)
+
+        # Calculate centered covariance matrix
+        def sub(patches):
+            return patches - mean
+        cov_mx = self.apply_and_reduce(sub, stride) / (self.args.samples * self.n_patch_per_img)
+        cov_mx = torch_force_symmetric(cov_mx)
+
+        # Calculate whitening/unwhitening
+        self.whiten_op = mx_frac_pow(cov_mx, -1/2, self.args.whiten_tol)
+        self.unwhiten_op = mx_frac_pow(cov_mx, 1/2, self.args.whiten_tol)
+        return self.whiten_op, self.unwhiten_op
+
     def _calc_whitening(self, patches):
         """Given tensor of centered patches, calculate the whitening (and unwhitening) operators."""
         if self.whiten_op is not None:
@@ -122,11 +163,11 @@ class ImagePreprocessor():
             return
         assert self.unwhiten_op is None
 
-        cov_mx = torch.cov(patches.T)
-        cov_mx = torch_force_symmetric(cov_mx)
+        self.cov_mx = torch.cov(patches.T)
+        self.cov_mx = torch_force_symmetric(self.cov_mx)
         tol = self.args.whiten_tol      # NOTE: this is actually a crucial parameter that can swing performance by multiple percentage points
-        self.whiten_op = mx_frac_pow(cov_mx, -1/2, tol)
-        self.unwhiten_op = mx_frac_pow(cov_mx, 1/2, tol)
+        self.whiten_op = mx_frac_pow(self.cov_mx, -1/2, tol)
+        self.unwhiten_op = mx_frac_pow(self.cov_mx, 1/2, tol)
 
     def train_set_image(self, idx):
         # default to using original + horizontal augmented images
@@ -142,69 +183,6 @@ class ImagePreprocessor():
             else:
                 sample = (img, sample[1])
         return sample
-
-
-    def generate_data(self, n_samples, test=False):
-        """Generate (and patch-ify) given number of samples from the MNIST dataset"""
-        print("Patch-ifying images...", flush=True)
-        patches = torch.zeros(size=(n_samples, self.n_patch_per_dim, self.n_patch_per_dim, self.args.patch_sz**2, self.n_inp_channels), dtype=torch.float32)
-        if self.n_class > 0:
-            labels = torch.zeros(size=(n_samples, 1), dtype=torch.from_numpy(np.empty(shape=(1,), dtype=np.min_scalar_type(-1 * self.n_class))).dtype)  # get min. scalar type needed for labels
-        else:
-            labels = None
-
-        patch_dim = self.args.patch_sz * self.args.patch_sz * self.n_inp_channels
-        conv = torch.nn.Conv2d(in_channels=self.n_inp_channels, 
-                                out_channels=patch_dim, 
-                                kernel_size=(self.args.patch_sz, self.args.patch_sz), 
-                                stride=1,
-                                padding=0)
-
-        # One filter for each location in the patch (flattens 3 color channels as well)
-        conv.weight.data.fill_(0)
-        conv.bias.data.fill_(0)
-        for top_idx in range(self.args.patch_sz):
-            for left_idx in range(self.args.patch_sz):
-                for c_idx in range(self.n_inp_channels):
-                    conv.weight.data[top_idx * self.args.patch_sz*self.n_inp_channels + left_idx*self.n_inp_channels + c_idx, c_idx, top_idx, left_idx] = 1
-
-        if torch.cuda.is_available():
-            conv = conv.to("cuda:0", non_blocking=True)
-
-        # Convert images to image patches and store ground truth labels
-        for idx in tqdm(range(n_samples)):
-            if test:
-                sample = self.dataset[idx]
-            else:
-                sample = self.train_set_image(idx)
-
-            if len(sample) > 1:
-                labels[idx] = sample[1]
-            img = sample[0]
-            if torch.cuda.is_available():
-                img = img.to("cuda:0", non_blocking=True)
-            res = conv(img).squeeze()
-            res = rearrange(res, "(a b) c d -> a b c d", a=self.args.patch_sz**2, b=self.n_inp_channels, c=self.n_patch_per_dim, d=self.n_patch_per_dim)
-            patches[idx] = res.permute((2, 3, 0, 1)).to("cpu")
-        del conv, sample, res
-
-        # Remove the contextual mean from each patch (centering before whitening)
-        print("Calculating contextual patch means...", flush=True)
-        c_means = self._context_mean(patches)
-        patches = patches - c_means
-
-        # Calculate whitening operator + apply it
-        print("Calculating and applying whitening operator to all patches...", flush=True)
-        patches = rearrange(patches, "a b c d e -> (a b c) (d e)")
-        self._calc_whitening(patches)
-        patches = patches.T
-        patches = self.whiten_op @ patches 
-        patches += 1e-20          # do not allow any patch to have a zero norm representation
-        norm = torch.linalg.vector_norm(patches, ord=2, dim=0)
-        patches /= norm
-
-        if torch.cuda.is_available(): torch.cuda.empty_cache()
-        return patches, labels
 
     def get_context_pairs(self, context_sz):
         """Return the set of all patch context pairs for a single image in this dataset."""
@@ -250,41 +228,23 @@ class ImagePreprocessor():
         return torch.flatten(betas, start_dim=1)
 
 
-    def get_single_image(self, idx, stride=1):
-        # Return a single preprocessed image
+    def _whiten_normalize_patch(self, patches):
         assert self.whiten_op is not None and self.unwhiten_op is not None
-        assert idx < len(self.dataset)
-
-        t0 = time.time()
-
-        sample = self.dataset[idx]
-        label = sample[1]
-        
-        patches = torch.nn.functional.unfold(sample[0], self.args.patch_sz, stride=stride).clone()
-        n_patch_per_dim = int(math.sqrt(patches.shape[1]))
-        assert n_patch_per_dim ** 2 == patches.shape[1]
-        patches = rearrange(patches, "(a b) (c d) -> c d b a", a=self.n_inp_channels, c=n_patch_per_dim, d=n_patch_per_dim)
-
-        t1 = time.time()
-
-        # TODO: this should be per-channel!!
-        # context size == image size, keep things simple for now
-        assert self.context_sz == 32
-        patches = patches - patches.mean()
-
-        t2 = time.time()
-
-        # Apply whitening operator + normalize
-        patches = rearrange(patches, "b c d e -> (b c) (d e)")
-        patches = patches.T
         patches = self.whiten_op @ patches 
         patches += 1e-20          # do not allow any patch to have a zero norm representation
         norm = torch.linalg.vector_norm(patches, ord=2, dim=0)
         patches /= norm
 
-        t3 = time.time()
-        # print(f"{t3 - t0}: {t1 - t0} {t2 - t1} {t3 - t2}")
+    def get_single_image(self, idx, stride=1):
+        # Return a single preprocessed image
+        assert idx < len(self.dataset)
 
+        sample = self.dataset[idx]
+        label = sample[1]
+
+        patches = self.img_to_centered_patches(sample, stride)
+        patches = patches.T
+        patches = self._whiten_normalize_patch(patches)
         return patches, label
 
 
