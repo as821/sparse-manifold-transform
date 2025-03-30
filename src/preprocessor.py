@@ -91,7 +91,7 @@ class ImagePreprocessor():
         patches = rearrange(patches, "b c d e -> (b c) (d e)")
         return patches
 
-    def apply_and_reduce(self, func, stride=1, cuda=False, whiten=True):
+    def apply_and_reduce(self, func, stride=1, cuda=False, whiten=True, bilinear_func=None):
         # Generate centered (and possibly whitened) image patches for an image, apply the given function, then perform a matrix multiplication over the dataset
         out = None
         for idx in tqdm(range(self.args.samples)):
@@ -100,10 +100,17 @@ class ImagePreprocessor():
                 patches = self._whiten_normalize_patch(patches)
             if func is not None:
                 patches = func(patches)
-            if out is None:
-                out = patches.T @ patches
+            
+            if bilinear_func is not None:
+                form = bilinear_func(patches)
+                prod = patches.T @ form @ patches
             else:
-                out += patches.T @ patches
+                prod = patches.T @ patches
+            
+            if out is None:
+                out = prod
+            else:
+                out += prod
         return out
     
     def apply_and_sum(self, func, dim=0, stride=1, cuda=False, whiten=True):

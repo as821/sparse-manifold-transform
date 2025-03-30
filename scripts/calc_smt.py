@@ -44,6 +44,8 @@ def main(args):
     # calculate embeddings
     smt_layer = ManifoldEmbedLayer(args, dset, sc_layer)
 
+    pdb.set_trace()
+
 
     # TODO: save checkpoint
 
@@ -68,6 +70,8 @@ def main(args):
 
 if __name__ == "__main__":
     start_time = time.time()
+    
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     # https://github.com/cupy/cupy/issues/3431#issuecomment-647931780
     # https://github.com/numpy/numpy/blob/da1621637b7c59c155ec29466fb5f810ebd902ac/numpy/__init__.py#L334-L353
