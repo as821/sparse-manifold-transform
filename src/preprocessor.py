@@ -234,15 +234,23 @@ class ImagePreprocessor():
         patches += 1e-20          # do not allow any patch to have a zero norm representation
         norm = torch.linalg.vector_norm(patches, ord=2, dim=0)
         patches /= norm
+        return patches
 
-    def get_single_image(self, idx, stride=1):
+    def get_single_train_image(self, idx, stride=1):
         # Return a single preprocessed image
         assert idx < len(self.dataset)
+        sample, label = self.train_set_image(idx)
+        patches = self.img_to_centered_patches(sample, stride)
+        patches = patches.T
+        patches = self._whiten_normalize_patch(patches)
+        return patches, label
 
+    def get_single_eval_image(self, idx, stride=1):
+        # Return a single preprocessed image
+        assert idx < len(self.dataset)
         sample = self.dataset[idx]
         label = sample[1]
-
-        patches = self.img_to_centered_patches(sample, stride)
+        patches = self.img_to_centered_patches(sample[0], stride)
         patches = patches.T
         patches = self._whiten_normalize_patch(patches)
         return patches, label

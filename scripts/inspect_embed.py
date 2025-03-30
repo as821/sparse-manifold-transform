@@ -25,7 +25,7 @@ def main(a):
 
     if a.per_img:
         for idx in range(len(dset.dataset)):
-            img, label = dset.get_single_image(idx, a.stride)
+            img, label = dset.get_single_eval_image(idx, a.stride)
             img = img.unsqueeze(0)
             sc = sc_layer(args, img, test=True, dense=True)
             smt = smt_layer(sc, dense=True)
@@ -109,7 +109,7 @@ def main(a):
         embed = torch.zeros(n_samples, dset.n_patch_per_img, args.embed_dim)
         labels = torch.zeros(n_samples)
         for idx in tqdm(range(n_samples)):
-            img, label = dset.get_single_image(idx, a.stride)
+            img, label = dset.get_single_eval_image(idx, a.stride)
             labels[idx] = label
             img = img.unsqueeze(0).to("cuda", non_blocking=True)
             sc = sc_layer(args, img, test=True, dense=True)

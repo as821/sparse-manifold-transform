@@ -16,11 +16,10 @@ import pdb
 
 class SparseCodeLayer:
     """Encode inputs in the given dictionary basis. Optionally, generate a random basis from the first data passed to this object."""
-    def __init__(self, dict_sz, phi, gq_thresh, idx_list=None):
+    def __init__(self, dict_sz, phi, gq_thresh):
         self.basis = phi
         self.dict_sz = dict_sz
         self.gq_thresh = gq_thresh
-        self.idx_list = idx_list
 
     def __call__(self, args, data, test=False, dense=False):
         # Encode the given data in this object's dictionary basis
@@ -91,6 +90,10 @@ def _general_sparse_coding_dense(args, data, phi, gq_thresh, test=False):
     assert len(data.shape) == 3
     cosine_sim = phi.T @ data
 
+
+    # TODO: do we still want to keep zero code handling?
+
+
     mask = cosine_sim >= gq_thresh
     cosine_sim[mask] = 1
     mask = ~mask
@@ -157,7 +160,7 @@ class SparseWorkSlice():
 
 
 
-def generate_dict(args, x, dict_sz, dict_thresh):
+def generate_dict(args, dset, dict_sz, dict_thresh):
     """Generate dictionary elements from the already generated data points.
     NOTE: could run dictionary learning with multiple initialization and pick the best (like normal K-Means)
     """
@@ -165,29 +168,35 @@ def generate_dict(args, x, dict_sz, dict_thresh):
 
     # Return a random selection of (unique) image patches as the dictionary to use
     ptr = 0 
-    phi = torch.zeros(size=(x.shape[0], dict_sz), dtype=x.dtype)
+    patch_dim = dset.n_inp_channels * args.patch_sz * args.patch_sz
+    phi = torch.zeros(size=(patch_dim, dict_sz))
     if torch.cuda.is_available():
         phi = phi.to('cuda:0')
-    shuf = [i for i in range(x.shape[1])]
+    shuf = [i for i in range(args.samples)]
     random.shuffle(shuf)
     pbar = tqdm(total=dict_sz)
 
-    # for idx, s in enumerate(shuf):
-    chnk_sz = 1000
-    idx_list = []
+    chnk_sz = 50
     for start in range(0, len(shuf), chnk_sz):
         end = min(len(shuf), start+chnk_sz)
-        cand = x[:, shuf[start:end]]
+        
+        # generate all patches for the specified images
+        cand = torch.zeros((patch_dim, chnk_sz * dset.n_patch_per_img))
+        for idx in range(start, end):
+            c_idx = idx - start
+            cand[:, c_idx * dset.n_patch_per_img : (c_idx + 1) * dset.n_patch_per_img] = dset.get_single_train_image(shuf[idx])[0]
+
         if torch.cuda.is_available():
             cand = cand.to('cuda:0')
 
+        # calc candidate similarity to existing dict elements and other candidates in the batch
         sim = cand.T @ phi
         c_sim = cand.T @ cand
 
-        # For all candidates, check if room for them in the dictionary (also considering other new dict elements added on this iteration)
+        # check if candidates fit in the dictionary
         c_added_idx = []
-        for i in range(start, end):
-            c_idx = i - start
+        for i in range(start * dset.n_patch_per_img, end * dset.n_patch_per_img):
+            c_idx = i - (start * dset.n_patch_per_img)
             slc = sim[c_idx, :]
             if not torch.any(slc > dict_thresh):
                 if len(c_added_idx) > 0:
@@ -202,13 +211,12 @@ def generate_dict(args, x, dict_sz, dict_thresh):
                 ptr += 1
                 pbar.update(1)
                 c_added_idx.append(c_idx)
-                idx_list.append(shuf[i])
 
                 if ptr == dict_sz:
                     break
 
         if ptr == dict_sz:
-            print(f"Found {dict_sz} sufficiently (<={dict_thresh}) unique dictionary elements in {i} / {x.shape[1]} ({i / x.shape[1]:0.4f}) tries.")
+            print(f"Found {dict_sz} sufficiently (<={dict_thresh}) unique dictionary elements in {i} / {args.samples * dset.n_patch_per_img} ({i / (args.samples * dset.n_patch_per_img):0.4f}) tries.")
             break
     assert ptr == dict_sz, f"Unable to find {dict_sz} sufficiently (<={dict_thresh}) unique dictionary elements in the dataset (only found {ptr})."
     pbar.close()
@@ -217,12 +225,11 @@ def generate_dict(args, x, dict_sz, dict_thresh):
 
     # shuffle dictionary elements to avoid having dict elements with densest codes being grouped together in the low indices of the dictionary (allows increasing size of GPU slices later)
     perm = torch.randperm(phi.shape[1])
-    idx_list = [idx_list[i] for i in perm.tolist()]
     phi = phi[:, perm]
 
     if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-    return phi.float(), idx_list
+    return phi.float()
 
 
 

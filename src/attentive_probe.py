@@ -230,6 +230,6 @@ class CustomDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         with torch.no_grad():
-            return self.dset.get_single_image(idx, self.stride)
+            return self.dset.get_single_eval_image(idx, self.stride)
 
 

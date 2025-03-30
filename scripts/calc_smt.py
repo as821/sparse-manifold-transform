@@ -24,6 +24,7 @@ from diff_op import construct_diff_op
 from util import generate_dset_dict_codes, generate_argparser, validate_args, save_ckpt, generate_dset
 from input_output import mmap_csr_cleanup
 from classifier import test_set_classify
+from sparse_code import generate_dict, SparseCodeLayer
 
 import pdb
 
@@ -36,10 +37,8 @@ def main(args):
     print("Calculating whitening operator")
     dset.calc_whitening()
 
-
-    # TODO: generate dictionary
-
-
+    # generate dictionary
+    sc_layer = SparseCodeLayer(args.dict_sz, generate_dict(args, dset, args.dict_sz, args.dict_thresh), args.gq_thresh)
 
     # TODO: calculate inverse square root covariance matrix
 
