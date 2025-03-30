@@ -7,12 +7,7 @@ from tqdm import tqdm
 from random import randint
 import shutil
 
-from input_output import mmap_file_init
 from matrix_utils import mx_inv_sqrt, _is_real_sym, torch_force_symmetric
-from matmul import GpuSparseMatmul
-from slice import PreMatmulCacheGen, csr_col_slice, csr_col_slice_transpose
-from loss_mx_calc import LossMatrixCalc
-from ctypes_interface import c_impl_available
 
 
 from diff_op import DifferentialOperator

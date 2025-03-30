@@ -20,7 +20,6 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 
 from util import generate_dset_dict_codes, generate_argparser, validate_args, save_ckpt, generate_dset
-from input_output import mmap_csr_cleanup
 from classifier import test_set_classify
 
 from preprocessor import ImagePreprocessor

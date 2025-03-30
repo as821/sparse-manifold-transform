@@ -16,7 +16,6 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 from preprocessor import generate_dset
 from sparse_code import SparseCodeLayer, generate_dict
-from input_output import MemmapCSR
 from manifold_embedding import ManifoldEmbedLayer
 
 def generate_dset_dict_codes(args):
