@@ -91,11 +91,13 @@ class ImagePreprocessor():
         patches = rearrange(patches, "b c d e -> (b c) (d e)")
         return patches
 
-    def apply_and_reduce(self, func, stride=1, cuda=False):
-        # Generate centered (but not whitened) image patches for an image, apply the given function, then perform a matrix multiplication over the dataset
+    def apply_and_reduce(self, func, stride=1, cuda=False, whiten=True):
+        # Generate centered (and possibly whitened) image patches for an image, apply the given function, then perform a matrix multiplication over the dataset
         out = None
         for idx in tqdm(range(self.args.samples)):
             patches = self.img_to_centered_patches(self.train_set_image(idx, cuda)[0], stride)
+            if whiten:
+                patches = self._whiten_normalize_patch(patches)
             if func is not None:
                 patches = func(patches)
             if out is None:
@@ -103,18 +105,31 @@ class ImagePreprocessor():
             else:
                 out += patches.T @ patches
         return out
+    
+    def apply_and_sum(self, func, dim=0, stride=1, cuda=False, whiten=True):
+        # Generate centered (and possibly whitened) image patches for an image, apply the given function, then perform a sum over the dataset
+        out = None
+        for idx in tqdm(range(self.args.samples)):
+            patches = self.img_to_centered_patches(self.train_set_image(idx, cuda)[0], stride)
+            if whiten:
+                patches = self._whiten_normalize_patch(patches)
+            if func is not None:
+                patches = func(patches)
+            if out is None:
+                out = patches.sum(dim=dim)
+            else:
+                out += patches.sum(dim=dim)
+        return out
 
     def calc_whitening(self, stride=1):
         # Calculate mean for each patch channel
-        mean = torch.zeros((self.n_inp_channels * self.args.patch_sz * self.args.patch_sz), device="cuda")
-        for idx in tqdm(range(self.args.samples)):
-            mean += self.img_to_centered_patches(self.train_set_image(idx, cuda=True)[0], stride).sum(dim=0)
+        mean = self.apply_and_sum(None, dim=0, stride=stride, cuda=True, whiten=False)
         mean /= (self.args.samples * self.n_patch_per_img)
 
         # Calculate centered covariance matrix
         def sub(patches):
             return patches - mean
-        cov_mx = self.apply_and_reduce(sub, stride, cuda=True) / (self.args.samples * self.n_patch_per_img)
+        cov_mx = self.apply_and_reduce(sub, stride, cuda=True, whiten=False) / (self.args.samples * self.n_patch_per_img)
         cov_mx = torch_force_symmetric(cov_mx)
 
         # Calculate whitening/unwhitening

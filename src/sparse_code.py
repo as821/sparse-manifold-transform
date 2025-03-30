@@ -10,18 +10,17 @@ import pdb
 
 class SparseCodeLayer:
     """Encode inputs in the given dictionary basis. Optionally, generate a random basis from the first data passed to this object."""
-    def __init__(self, dict_sz, phi, gq_thresh, dset):
+    def __init__(self, dict_sz, phi, gq_thresh):
         self.basis = phi
         self.dict_sz = dict_sz
         self.gq_thresh = gq_thresh
-        self.dset = dset
         
         # usage of basis assumes it has unit norm
         assert (torch.linalg.norm(self.basis, dim=0) - 1).abs().max() < 1e-3
 
     def sparse_code_img(self, patches):
-        # Given the centered (but not whitened) patches for a single image, return their sparse codes
-        return self.__call__(self.dset._whiten_normalize_patch(patches))
+        # Given the centered and whitened patches for a single image, return their sparse codes
+        return self.__call__(patches)
 
     @torch.compiler.disable
     def __call__(self, data):

@@ -132,9 +132,7 @@ class ManifoldEmbedLayer:
 
     def inv_sqrt_cov(self, dset, sc_layer, stride=1):
         # Calculate mean over all patches
-        mean = torch.zeros((self.args.dict_sz), device="cuda")
-        for idx in tqdm(range(self.args.samples)):
-            mean += sc_layer.sparse_code_img(dset.img_to_centered_patches(dset.train_set_image(idx, cuda=True)[0], stride)).sum(dim=1)
+        mean = dset.apply_and_sum(sc_layer.sparse_code_img, dim=1, stride=stride, cuda=True, whiten=True)    
         mean /= (self.args.samples * dset.n_patch_per_img)
         mean = mean.unsqueeze(-1)
 
@@ -143,11 +141,11 @@ class ManifoldEmbedLayer:
             return (sc_layer.sparse_code_img(patches) - mean).T
         cov_mx = dset.apply_and_reduce(sub, stride, cuda=True) / (self.args.samples * dset.n_patch_per_img)
         
+        # matrix inverse sqrt
         cov_mx = torch_force_symmetric(cov_mx)
         assert _is_real_sym(cov_mx)
         inv_sqrt_alpha_cov = mx_inv_sqrt(cov_mx).to("cuda", non_blocking=True)
         assert _is_real_sym(inv_sqrt_alpha_cov, tol=1e-1), "Inv. sqrt. covariance is not (almost) real-symmetric."
-
         inv_sqrt_alpha_cov = torch_force_symmetric(inv_sqrt_alpha_cov)
         return inv_sqrt_alpha_cov
 

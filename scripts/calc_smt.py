@@ -39,7 +39,7 @@ def main(args):
     dset.calc_whitening()
 
     # generate dictionary
-    sc_layer = SparseCodeLayer(args.dict_sz, generate_dict(args, dset, args.dict_sz, args.dict_thresh), args.gq_thresh, dset)
+    sc_layer = SparseCodeLayer(args.dict_sz, generate_dict(args, dset, args.dict_sz, args.dict_thresh), args.gq_thresh)
 
     # calculate embeddings
     smt_layer = ManifoldEmbedLayer(args, dset, sc_layer)
