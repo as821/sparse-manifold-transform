@@ -14,87 +14,8 @@ import json
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
-from preprocessor import generate_dset
 from sparse_code import SparseCodeLayer, generate_dict
 from manifold_embedding import ManifoldEmbedLayer
-
-def generate_dset_dict_codes(args):
-    # Run preprocessing, dictionary learning, + sparse coding in a separate process to reduce RAM usage. Python 
-    # garbage collector will hang onto GB of RAM from this initial processing. Child process gets its own 
-    # Python interpreter + all memory is freed when that process ends.
-    # NOTE: this function assumes no other memory maps have been used prior to this function running
-    
-    args_path = args.mmap_path + "/args.pkl"
-    with open(args_path, "wb") as file: pickle.dump(args, file)
-    
-    # tell child where to write results
-    dset_path = args.mmap_path + "/dset.pkl"
-    phi_path = args.mmap_path + "/phi.pkl"
-    label_path = args.mmap_path + "/label.pt"
-    info_path = args.mmap_path + "/alphas_info.pkl"    
-
-    # spawn child process using current Python executable, then wait for completion
-    path = os.path.join(os.getcwd(), 'src')
-    subprocess.run([f"{sys.executable}", "-c", f"import sys; sys.path.append('{path}'); import torch; torch.set_grad_enabled(False); from util import _new_process_main; _new_process_main('{args_path}', '{dset_path}', '{phi_path}', '{label_path}', '{info_path}')"])
-
-    # read results from files
-    with warnings.catch_warnings():
-        warnings.simplefilter(action='ignore', category=FutureWarning)
-        img_label = torch.load(label_path, weights_only=False)
-        with open(phi_path, "rb") as file: phi = pickle.load(file)
-        with open(dset_path, "rb") as file: dset = pickle.load(file)
-        with open(info_path, "rb") as file: info = pickle.load(file)
-
-    files = [f for f in os.listdir(args.mmap_path) if os.path.isfile(os.path.join(args.mmap_path, f)) and ".bin" in f]
-    assert len(files) == 3, "Unexpected contents in mmap directory! Assumes only .bin files are for the memmory mapped sparse codes."
-
-    def get_path(files, str):
-        f = [i for i in files if str in i]
-        assert len(f) == 1
-        return "/" + f[0]
-
-    shp = (int(info[0]), int(info[1]))
-    data_dtype = np.dtype(info[2])
-    idx_dtype = np.dtype(info[3])
-    assert data_dtype == np.float32 and idx_dtype == np.int64
-    data = np.memmap(args.mmap_path + get_path(files, 'data'), mode="r+", dtype=data_dtype)
-    indptr = np.memmap(args.mmap_path + get_path(files, 'indptr'), mode="r+", dtype=idx_dtype)
-    indices = np.memmap(args.mmap_path + get_path(files, 'indices'), mode="r+", dtype=idx_dtype)
-
-    alphas = MemmapCSR((data, indices, indptr), shape=shp, dtype=data.dtype, copy=False)
-    assert alphas.dtype == data_dtype
-
-    # clean up
-    os.remove(dset_path)
-    os.remove(phi_path)
-    os.remove(info_path)
-    os.remove(label_path)
-    os.remove(args_path)
-
-    return dset, alphas, phi, img_label
-
-
-def _new_process_main(args_path, dset_path, sc_path, label_path, info_path):
-    # function run in the child process
-    with torch.no_grad():
-        with open(args_path, "rb") as file: args = pickle.load(file)
-
-        # generate dataset, dictionary, and sparse codes
-        dset = generate_dset(args)
-        x, img_label = dset.generate_data(args.samples)
-        phi, idx_list = generate_dict(args, x, args.dict_sz, args.dict_thresh)
-        sc_layer = SparseCodeLayer(args.dict_sz, phi, args.gq_thresh, idx_list)
-        alphas = sc_layer(args, x)
-
-
-        # write result to files
-        with open(sc_path, "wb") as file: pickle.dump(sc_layer, file)
-        torch.save(img_label, label_path)
-        with open(dset_path, "wb") as file: pickle.dump(dset, file)
-        info = [f'{alphas.shape[0]}', f'{alphas.shape[1]}', f'{alphas.data.dtype}', f'{alphas.indptr.dtype}']
-        with open(info_path, "wb") as file: pickle.dump(info, file)
-
-        exit()
 
 
 def validate_args(args):
@@ -163,8 +84,6 @@ def generate_argparser():
     parser.add_argument('--proj_cache_proc', default=2, type=int, help='SMT embedding projection matmul cache generation workers')
 
     return parser
-
-
 
 def load_ckpt(path, dense=False):
     print("Loading checkpoint...", flush=True)

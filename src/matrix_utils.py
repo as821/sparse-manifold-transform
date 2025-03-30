@@ -11,11 +11,6 @@ def _is_real_sym(m, verbose=False, tol=1e-5):
         print(f"is real sym: {torch.max(torch.abs(m - m.T))}", flush=True)
     return _all_close(m, m.T, tol=tol) and not m.is_complex()
 
-def _np_is_real_sym(m, verbose=False, tol=1e-5):
-    if verbose:
-        print(f"is real sym: {np.max(np.abs(m - m.T))}", flush=True)
-    return np.allclose(m, m.T, rtol=tol, atol=tol) and not np.iscomplex(m).any()
-
 def mx_frac_pow(m, p, tol):
     # Calculate eigendecomposition and then exponentiate eigenvectors to get fractional/negative power of a matrix
     # NOTE: this assumes that input matrix is real, symmetric (this is only applied to a covariance matrix 
@@ -62,21 +57,9 @@ def mx_frac_pow(m, p, tol):
 def mx_inv_sqrt(m, tol=1e-15):
     return mx_frac_pow(m, -1/2, tol)
 
-def force_symmetric(m):
-    # Copy upper triangle to lower triangle of given matrix
-    return np.triu(m) + np.triu(m, k=1).T
-
 def torch_force_symmetric(m):
     # Copy upper triangle to lower triangle of given matrix
     return torch.triu(m) + torch.triu(m, diagonal=1).T
-
-def csr_row_view(csr, start, end):
-    assert start >= 0 and end <= csr.shape[0] and start < end
-    indptr = csr.indptr[start:end+1].copy()
-    indices = csr.indices[indptr[0] : indptr[-1]]
-    data = csr.data[indptr[0] : indptr[-1]]
-    indptr -= indptr[0]     # recenter all indices at 0
-    return sp.csr_array((data, indices, indptr), shape=(end-start, csr.shape[1]), dtype=csr.dtype, copy=False)
 
 def profile_log(enable, running, out):
     if enable:
