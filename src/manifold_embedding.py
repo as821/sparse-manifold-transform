@@ -72,13 +72,14 @@ class ManifoldEmbedLayer:
                 evals, evecs = sci.linalg.eigh(closed_form)
 
         # Post-process eigendecomposition solution
-        U = self._post_process_solution(args, evals, evecs)
+        U, U_full = self._post_process_solution(args, evals, evecs)
 
         # Discrepancy between (1) and (2) on ordering of U and inv_sqrt_alpha_cov here, 
         # this way from (2) makes the shapes work out + makes sense intuitively. First, apply whitening
         # transform to the alpha vector that P is right-multiplied by, then apply U to obtain a spectral
         # embedding of this whitened vector
         P = U @ inv_sqrt_alpha_cov 
+        self.projection_full = (U_full @ inv_sqrt_alpha_cov).astype(np.float32)
         assert P.shape[0] == self.embed_dim 
         # and P.shape[1] == args.dict_sz and 
         assert not np.any(np.isnan(P))
@@ -189,7 +190,7 @@ class ManifoldEmbedLayer:
 
         assert indices.shape[0] == self.embed_dim
         evals = evals[indices]       
-        return evecs[:, indices].transpose()
+        return evecs[:, indices].transpose(), evecs.transpose()
 
     @torch.compiler.disable
     def __call__(self, x, dense=False):

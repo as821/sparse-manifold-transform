@@ -213,6 +213,7 @@ def save_ckpt(ckpt_path, args, sc_layer, smt_layer, dset):
     # save dictionary, embedding matrix, + a copy of the arguments
     torch.save(sc_layer.basis, path + "sc_basis.pt")
     np.save(path + "smt_proj.npy", smt_layer.projection)
+    np.save(path + "smt_proj_full.npy", smt_layer.projection_full)
     with open(path + "args.json", "w") as file:
         json.dump(vars(args), file, indent=4)
 
