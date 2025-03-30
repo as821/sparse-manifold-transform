@@ -18,12 +18,13 @@ import time
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
-from preprocessor import ImagePreprocessor
-from manifold_embedding import ManifoldEmbedLayer
-from diff_op import construct_diff_op
+
 from util import generate_dset_dict_codes, generate_argparser, validate_args, save_ckpt, generate_dset
 from input_output import mmap_csr_cleanup
 from classifier import test_set_classify
+
+from preprocessor import ImagePreprocessor
+from manifold_embedding import ManifoldEmbedLayer
 from sparse_code import generate_dict, SparseCodeLayer
 
 import pdb
@@ -38,18 +39,10 @@ def main(args):
     dset.calc_whitening()
 
     # generate dictionary
-    sc_layer = SparseCodeLayer(args.dict_sz, generate_dict(args, dset, args.dict_sz, args.dict_thresh), args.gq_thresh)
+    sc_layer = SparseCodeLayer(args.dict_sz, generate_dict(args, dset, args.dict_sz, args.dict_thresh), args.gq_thresh, dset)
 
-    # TODO: calculate inverse square root covariance matrix
-
-
-
-    # TODO: calculate core ADD^TA^T loss matrix
-
-
-
-    # TODO: compute complete loss matrix, solve, get projection matrix
-
+    # calculate embeddings
+    smt_layer = ManifoldEmbedLayer(args, dset, sc_layer)
 
 
     # TODO: save checkpoint
@@ -59,22 +52,6 @@ def main(args):
 
     # TODO: optionally, run classifier
 
-
-
-    # Generate dataset and sparse codes for images
-    dset, alphas, sc_layer, img_label = generate_dset_dict_codes(args)
-
-    # convert argument specified in number of images into number of patches
-    orig_diff_op_d_chunk = args.diff_op_d_chunk
-    args.diff_op_d_chunk *= dset.n_patch_per_img
-    print(f"Converted diff_op_d_chunk: {args.diff_op_d_chunk} images -> {args.diff_op_d_chunk * dset.n_patch_per_img} patches ({dset.n_patch_per_img} patch/img)")
-
-    # Perform SMT calculations for the given dataset        
-    diff_op = construct_diff_op(args, dset, alphas, args.context_sz, orig_diff_op_d_chunk)
-    print(f"Total sparsity: {alphas.nnz / (alphas.shape[0] * alphas.shape[1])}", flush=True)
-
-    # Generate embedding matrix (P matrix) and embeddings (betas)
-    smt_layer = ManifoldEmbedLayer(args, alphas, diff_op, args.embed_dim)
 
     print(f"Calculating layer embeddings...", flush=True)
     betas = smt_layer(alphas)

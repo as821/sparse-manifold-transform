@@ -6,10 +6,10 @@ import scipy.sparse as sp
 def _all_close(a, b, tol=1e-5):
     return (torch.abs(a - b) < tol).all()
 
-def _is_real_sym(m, verbose=False):
+def _is_real_sym(m, verbose=False, tol=1e-5):
     if verbose:
         print(f"is real sym: {torch.max(torch.abs(m - m.T))}", flush=True)
-    return _all_close(m, m.T) and not m.is_complex()
+    return _all_close(m, m.T, tol=tol) and not m.is_complex()
 
 def _np_is_real_sym(m, verbose=False, tol=1e-5):
     if verbose:

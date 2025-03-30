@@ -91,12 +91,11 @@ class ImagePreprocessor():
         patches = rearrange(patches, "b c d e -> (b c) (d e)")
         return patches
 
-    def apply_and_reduce(self, func, stride=1):
-        # Generate image patches for an image, apply the given function, then perform a matrix multiplication over the dataset
-        # Ex. calculating the covariance matrix over the patches
+    def apply_and_reduce(self, func, stride=1, cuda=False):
+        # Generate centered (but not whitened) image patches for an image, apply the given function, then perform a matrix multiplication over the dataset
         out = None
         for idx in tqdm(range(self.args.samples)):
-            patches = self.img_to_centered_patches(self.train_set_image(idx)[0], stride)
+            patches = self.img_to_centered_patches(self.train_set_image(idx, cuda)[0], stride)
             if func is not None:
                 patches = func(patches)
             if out is None:
@@ -105,6 +104,88 @@ class ImagePreprocessor():
                 out += patches.T @ patches
         return out
 
+    def calc_whitening(self, stride=1):
+        # Calculate mean for each patch channel
+        mean = torch.zeros((self.n_inp_channels * self.args.patch_sz * self.args.patch_sz), device="cuda")
+        for idx in tqdm(range(self.args.samples)):
+            mean += self.img_to_centered_patches(self.train_set_image(idx, cuda=True)[0], stride).sum(dim=0)
+        mean /= (self.args.samples * self.n_patch_per_img)
+
+        # Calculate centered covariance matrix
+        def sub(patches):
+            return patches - mean
+        cov_mx = self.apply_and_reduce(sub, stride, cuda=True) / (self.args.samples * self.n_patch_per_img)
+        cov_mx = torch_force_symmetric(cov_mx)
+
+        # Calculate whitening/unwhitening
+        self.whiten_op = mx_frac_pow(cov_mx, -1/2, self.args.whiten_tol)
+        self.unwhiten_op = mx_frac_pow(cov_mx, 1/2, self.args.whiten_tol)
+        return self.whiten_op, self.unwhiten_op
+
+    def train_set_image(self, idx, cuda=False):
+        # default to using original + horizontal augmented images
+        # alternate between "normal" and augmented datasets 
+        if idx % 2 == 0:
+            sample = self.dataset[int(idx / 2)]
+            img = sample[0]
+            if cuda:
+                img = img.to("cuda:0", non_blocking=True)
+            sample = (img, sample[1])
+        else:
+            # manually apply a horizontal flip augmentation
+            sample = self.dataset[int((idx-1) / 2)]
+            img = transforms.functional.hflip(sample[0])
+            if cuda:
+                img = img.to("cuda:0", non_blocking=True)
+            if len(sample) == 1:
+                sample = (img,)
+            else:
+                sample = (img, sample[1])
+        return sample
+
+    def _whiten_normalize_patch(self, patches):
+        assert self.whiten_op is not None and self.unwhiten_op is not None
+        patches = patches.T
+        if self.whiten_op.device != patches.device:
+            self.whiten_op = self.whiten_op.to(patches.device, non_blocking=True)
+        patches = self.whiten_op @ patches 
+        patches += 1e-20          # do not allow any patch to have a zero norm representation
+        patches /= torch.linalg.vector_norm(patches, ord=2, dim=0)
+        return patches
+
+    def get_single_train_image(self, idx, stride=1, cuda=False):
+        # Return a single preprocessed image
+        assert idx < len(self.dataset)
+        sample, label = self.train_set_image(idx, cuda=cuda)
+        patches = self.img_to_centered_patches(sample, stride)
+        patches = self._whiten_normalize_patch(patches)
+        return patches, label
+
+    def get_single_eval_image(self, idx, stride=1, cuda=False):
+        # Return a single preprocessed image
+        assert idx < len(self.dataset)
+        sample = self.dataset[idx]
+        label = sample[1]
+        patches = self.img_to_centered_patches(sample[0].to("cuda:0" if cuda else "cpu"), stride)
+        patches = self._whiten_normalize_patch(patches)
+        return patches, label
+
+    def get_context_pairs(self, context_sz):
+        """Return the set of all patch context pairs for a single image in this dataset."""
+        pairs = {}      # dict of sets, indexed by (x, y) pixel location
+        for x in range(self.n_patch_per_dim):
+            for y in range(self.n_patch_per_dim):
+                pairs[(x, y)] = set()
+                for nbr in _context(x, y, self.n_patch_per_dim, context_sz):
+                    if nbr not in pairs or (x, y) not in pairs[nbr]:
+                        pairs[(x, y)].add(nbr)
+        
+        # Coallesce into list of pixel pairs
+        out = []
+        for pixel in pairs:
+            out.extend([(pixel, nbr) for nbr in pairs[pixel]])
+        return out
+        
     def _context_mean(self, patches):
         """Calculate mean of context patches for each patch in each image."""
 
@@ -138,68 +219,6 @@ class ImagePreprocessor():
         ctx_means = res / (self.context_sz_mx.unsqueeze(0).unsqueeze(1) * self.input_patch_dim)
         return ctx_means.squeeze().unsqueeze(-1).unsqueeze(-1)
 
-    def calc_whitening(self, stride=1):
-        # Calculate mean for each patch channel
-        mean = torch.zeros((self.n_inp_channels * self.args.patch_sz * self.args.patch_sz))
-        for idx in tqdm(range(self.args.samples)):
-            mean += self.img_to_centered_patches(self.train_set_image(idx)[0], stride).sum(dim=0)
-        mean /= (self.args.samples * self.n_patch_per_img)
-
-        # Calculate centered covariance matrix
-        def sub(patches):
-            return patches - mean
-        cov_mx = self.apply_and_reduce(sub, stride) / (self.args.samples * self.n_patch_per_img)
-        cov_mx = torch_force_symmetric(cov_mx)
-
-        # Calculate whitening/unwhitening
-        self.whiten_op = mx_frac_pow(cov_mx, -1/2, self.args.whiten_tol)
-        self.unwhiten_op = mx_frac_pow(cov_mx, 1/2, self.args.whiten_tol)
-        return self.whiten_op, self.unwhiten_op
-
-    def _calc_whitening(self, patches):
-        """Given tensor of centered patches, calculate the whitening (and unwhitening) operators."""
-        if self.whiten_op is not None:
-            assert self.unwhiten_op is not None
-            return
-        assert self.unwhiten_op is None
-
-        self.cov_mx = torch.cov(patches.T)
-        self.cov_mx = torch_force_symmetric(self.cov_mx)
-        tol = self.args.whiten_tol      # NOTE: this is actually a crucial parameter that can swing performance by multiple percentage points
-        self.whiten_op = mx_frac_pow(self.cov_mx, -1/2, tol)
-        self.unwhiten_op = mx_frac_pow(self.cov_mx, 1/2, tol)
-
-    def train_set_image(self, idx):
-        # default to using original + horizontal augmented images
-        # alternate between "normal" and augmented datasets 
-        if idx % 2 == 0:
-            sample = self.dataset[int(idx / 2)]
-        else:
-            # manually apply a horizontal flip augmentation
-            sample = self.dataset[int((idx-1) / 2)]
-            img = transforms.functional.hflip(sample[0])
-            if len(sample) == 1:
-                sample = (img,)
-            else:
-                sample = (img, sample[1])
-        return sample
-
-    def get_context_pairs(self, context_sz):
-        """Return the set of all patch context pairs for a single image in this dataset."""
-        pairs = {}      # dict of sets, indexed by (x, y) pixel location
-        for x in range(self.n_patch_per_dim):
-            for y in range(self.n_patch_per_dim):
-                pairs[(x, y)] = set()
-                for nbr in _context(x, y, self.n_patch_per_dim, context_sz):
-                    if nbr not in pairs or (x, y) not in pairs[nbr]:
-                        pairs[(x, y)].add(nbr)
-        
-        # Coallesce into list of pixel pairs
-        out = []
-        for pixel in pairs:
-            out.extend([(pixel, nbr) for nbr in pairs[pixel]])
-        return out
-
     def aggregate_image_embed(betas, ks=4, stride=2):
         """Aggregate patch-level embeddings into image-level embeddings for each image, following procedure outlined by (2)"""
         print("Aggregating image embeddings...")
@@ -226,35 +245,6 @@ class ImagePreprocessor():
         betas = betas[:, :, :sz, :sz]
         if torch.cuda.is_available(): torch.cuda.empty_cache()
         return torch.flatten(betas, start_dim=1)
-
-
-    def _whiten_normalize_patch(self, patches):
-        assert self.whiten_op is not None and self.unwhiten_op is not None
-        patches = self.whiten_op @ patches 
-        patches += 1e-20          # do not allow any patch to have a zero norm representation
-        norm = torch.linalg.vector_norm(patches, ord=2, dim=0)
-        patches /= norm
-        return patches
-
-    def get_single_train_image(self, idx, stride=1):
-        # Return a single preprocessed image
-        assert idx < len(self.dataset)
-        sample, label = self.train_set_image(idx)
-        patches = self.img_to_centered_patches(sample, stride)
-        patches = patches.T
-        patches = self._whiten_normalize_patch(patches)
-        return patches, label
-
-    def get_single_eval_image(self, idx, stride=1):
-        # Return a single preprocessed image
-        assert idx < len(self.dataset)
-        sample = self.dataset[idx]
-        label = sample[1]
-        patches = self.img_to_centered_patches(sample[0], stride)
-        patches = patches.T
-        patches = self._whiten_normalize_patch(patches)
-        return patches, label
-
 
 
 def _context(x, y, n_patches, context_sz):

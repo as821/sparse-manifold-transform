@@ -8,28 +8,48 @@ from random import randint
 import shutil
 
 from input_output import mmap_file_init
-from matrix_utils import mx_inv_sqrt, _np_is_real_sym, force_symmetric
+from matrix_utils import mx_inv_sqrt, _is_real_sym, torch_force_symmetric
 from matmul import GpuSparseMatmul
 from slice import PreMatmulCacheGen, csr_col_slice, csr_col_slice_transpose
 from loss_mx_calc import LossMatrixCalc
 from ctypes_interface import c_impl_available
 
+
+from diff_op import DifferentialOperator
+
 import pdb
 
 class ManifoldEmbedLayer:
-    def __init__(self, args, alphas, diff_op, embed_dim, proj=None, dense=False):
-        """Given a set of vectorized inputs and an associated differential operator, calculate their manifold embedding."""
+    def __init__(self, args, dset, sc_layer, proj=None):
+        self.args = args
         if proj is not None:
             # loading from checkpoint (convert input projection matrix to mmap)
+            
+            # TODO: remove mmap stuff...
             t_fname = args.mmap_path + "/smt_proj_dense_T.bin"
             mmap_file_init(t_fname, proj)
             self.projection = np.memmap(t_fname, shape=proj.shape, dtype=proj.dtype)
-            if dense:
-                self.projection = torch.from_numpy(self.projection)
+            
+            self.projection = torch.from_numpy(self.projection)
             self.embed_dim = embed_dim
-            self.args = args
             return
     
+        
+        # calculate inverse square root covariance matrix
+        inv_sqrt_cov = self.inv_sqrt_cov(dset, sc_layer)
+
+
+        pdb.set_trace()
+
+        # TODO: calculate core ADD^TA^T loss matrix
+        diff_op = DifferentialOperator(args, dset)
+
+
+        # TODO: compute complete loss matrix, solve, get projection matrix
+
+
+
+
         if torch.cuda.is_available(): torch.cuda.empty_cache()
     
         assert alphas.dtype == np.float32
@@ -110,33 +130,25 @@ class ManifoldEmbedLayer:
                 return mgccg.cache, ""
             return mgccg.cache
 
-    def _get_inv_sqrt_cov(self, args, alphas):
-        # Apply slicing + CSC caching to alphas CSR matrix
-        alphas_cache = self._gen_slice_cache(args, alphas, args.cov_chunk, alphas_2d_slice=True, batch_sz_2d=args.cov_col_chunk)
-        alphas_T_cache = self._gen_slice_cache(args, alphas, args.cov_chunk, transpose_2d_slice=True, batch_sz_2d=args.cov_col_chunk)
+    def inv_sqrt_cov(self, dset, sc_layer, stride=1):
+        # Calculate mean over all patches
+        mean = torch.zeros((self.args.dict_sz), device="cuda")
+        for idx in tqdm(range(self.args.samples)):
+            mean += sc_layer.sparse_code_img(dset.img_to_centered_patches(dset.train_set_image(idx, cuda=True)[0], stride)).sum(dim=1)
+        mean /= (self.args.samples * dset.n_patch_per_img)
+        mean = mean.unsqueeze(-1)
 
-        # "cov" is not really the covariance, it is AA^T / N per reference (2)
-        print("Calculating covariance matrix...", flush=True)
-        if torch.cuda.is_available(): torch.cuda.empty_cache()        
-        ssm = GpuSparseMatmul(alphas_cache, alphas_T_cache, True, args.cov_chunk, False, mmap_path=args.mmap_path, a_shape=alphas.shape)
-        ssm.run(daemon=True)
-        if torch.cuda.is_available(): torch.cuda.empty_cache()        
-        cov = ssm.result / alphas.shape[1]
+        # Calculate centered covariance matrix
+        def sub(patches):
+            return (sc_layer.sparse_code_img(patches) - mean).T
+        cov_mx = dset.apply_and_reduce(sub, stride, cuda=True) / (self.args.samples * dset.n_patch_per_img)
         
-        cov = force_symmetric(cov)
-        assert _np_is_real_sym(cov, verbose=False)
-        cov = torch.from_numpy(cov)       # No (useful) sparse eigen-solvers give all eigenvalues and this is a (dict_sz x dict_sz) covariance matrix (which tend to be dense)
-        
-        inv_sqrt_alpha_cov = mx_inv_sqrt(cov).numpy()
-        assert _np_is_real_sym(inv_sqrt_alpha_cov, False, tol=1), "Inv. sqrt. covariance is not (almost) real-symmetric."
-        inv_sqrt_alpha_cov = force_symmetric(inv_sqrt_alpha_cov)
-        for k in alphas_T_cache:
-            for i in alphas_T_cache[k]:
-                alphas_T_cache[k][i].cleanup()
-        for k in alphas_cache:
-            for i in alphas_cache[k]:
-                if os.path.exists(i.fname):
-                    i.cleanup()
+        cov_mx = torch_force_symmetric(cov_mx)
+        assert _is_real_sym(cov_mx)
+        inv_sqrt_alpha_cov = mx_inv_sqrt(cov_mx).to("cuda", non_blocking=True)
+        assert _is_real_sym(inv_sqrt_alpha_cov, tol=1e-1), "Inv. sqrt. covariance is not (almost) real-symmetric."
+
+        inv_sqrt_alpha_cov = torch_force_symmetric(inv_sqrt_alpha_cov)
         return inv_sqrt_alpha_cov
 
     def _calc_inner(self, args, alphas, diff_op):

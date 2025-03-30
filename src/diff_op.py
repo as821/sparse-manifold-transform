@@ -15,6 +15,30 @@ from slice import SliceCacheEntry_Array
 if torch.cuda.is_available():
     import cupy as cp
 
+
+class DifferentialOperator():
+    def __init__(self, args, dset):
+        self.args = args
+        self.dset = dset
+        
+    def __call__(self, patches):
+        # Apply this differential operator to the patches of a single image. Convert A -> AD
+        # Since some patches have a "zero" code (not similar enough to any dictionary element), we have to calculate this online to ensure differential operator weights sum to zero
+
+        pdb.set_trace()
+
+        # setup a differential operator for a single image
+        self.args = args
+        if self.args.optim == "one":
+            self.diff_op = opt1_diff_op(args, dset)
+        elif self.args.optim == "two":
+            self.diff_op = opt2_diff_op(args, dset)
+        else:
+            assert False, "Invalid differential operator version"
+
+
+
+
 class DiffOpAssembly():
     def __init__(self, args, context_sz, dset, zero_code, diff_op_chunk, alphas):
         self.args = args
