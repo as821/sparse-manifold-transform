@@ -19,16 +19,7 @@ from manifold_embedding import ManifoldEmbedLayer
 
 
 def validate_args(args):
-    # Clear + create mmap directory
-    assert args.mmap_path[-1] != '/', "Filename format error. Assumes no trailing slash."
-    if os.path.exists(args.mmap_path):
-        shutil.rmtree(args.mmap_path)
-    os.mkdir(args.mmap_path)
-
     assert args.embed_dim <= args.dict_sz, f"Cannot have more embedding dimensions ({args.embed_dim}) than dictionary elements ({args.dict_sz})."
-    if args.cov_chunk < 0: args.cov_chunk = args.dict_sz
-    if args.inner_chunk < 0: args.inner_chunk = args.dict_sz
-    
     assert args.samples > 0
     
     # account for horizontal augmentation
@@ -44,8 +35,6 @@ def generate_argparser():
     parser.add_argument('--samples', default=50000, type=int, help='number of training samples to use')
     parser.add_argument('--test-samples', default=10000, type=int, help='number of training samples to use')
     parser.add_argument('--optim', default='two', choices=['one', 'two'], help='optimization equation to use from (2), naming follows the equation numbers from that paper. "one" is first deriv., "two" is second deriv.')
-    parser.add_argument('--mmap-path', default="/tmp/smt-memmap", type=str, help='path to store temporary memory map files')
-
 
     # Image pre-processor
     parser.add_argument('--patch-sz', default=6, type=int, help='image patch size')
@@ -59,8 +48,6 @@ def generate_argparser():
     # Sparse-coding
     parser.add_argument('--gq_thresh', default=0.3, type=float, help='general sparse coding cosine similarity threshold')
     parser.add_argument('--dict_thresh', default=0.7, type=float, help='sparse coding dictionary element similarity threshold.')
-    parser.add_argument('--zero_code_disable', action='store_true', help='ensure that no sparse codes are all zeros (map to nearest dict element if necessary)')
-    parser.add_argument('--sc_chunk', default=50, type=int, help='chunk size used when calculating sparse coding')
 
     # SMT Embedding
     parser.add_argument('--embed-dim', default=384, type=int, help='feature manifold dimension (patch embedding dimension, image-level embedding will be much larger)')
@@ -70,18 +57,7 @@ def generate_argparser():
     parser.add_argument('--nnclass-k', default=30, type=int, help='value of k for k-NN classifier')
     parser.add_argument('--knn_temp', default=0.03, type=float, help='temperatur for soft k-NN classifier')
 
-    # Performance optimization
-    parser.add_argument('--inner_chunk', default=8192, type=int, help='chunk size used when calculating the "inner" matrix for SMT optimization')
-    parser.add_argument('--cov_chunk', default=512, type=int, help='chunk size used when calculating the "cov" matrix for SMT optimization')
-    parser.add_argument('--cov_col_chunk', default=1000000, type=int, help='chunk size for breaking up columns in cov matrix calculation')       # 50k images --> 36450000 cols.
-    
-    parser.add_argument('--diff_op_a_chunk', default=750, type=int, help='alphas row chunk size used when applying differential operator to alphas')
-    parser.add_argument('--diff_op_d_chunk', default=25, type=int, help='diff op column chunk size used when applying differential operator to alphas (in # of images)')
-
-    parser.add_argument('--classify_chunk', default=50, type=int, help='chunk size used when classifying test-set images')
-    parser.add_argument('--proj_row_chunk', default=32, type=int, help='SMT embedding projection rows batch size')
-    parser.add_argument('--proj_col_chunk', default=500000, type=int, help='SMT embedding projection columns batch size')  
-    parser.add_argument('--proj_cache_proc', default=2, type=int, help='SMT embedding projection matmul cache generation workers')
+    parser.add_argument('--classify_chunk', default=500, type=int, help='chunk size used when classifying test-set images')
 
     return parser
 
@@ -97,11 +73,6 @@ def load_ckpt(path, dense=False):
         if action.required:
             action.required = False
     args = parser.parse_args(args=[], namespace=argparse.Namespace(**ckpt_args))
-
-    # clear out mmap dir
-    if os.path.exists(args.mmap_path):
-        shutil.rmtree(args.mmap_path)
-    os.mkdir(args.mmap_path)
 
     basis = torch.load(path + "sc_basis.pt")
     sc_layer = SparseCodeLayer(basis.shape[1], basis, args.gq_thresh)

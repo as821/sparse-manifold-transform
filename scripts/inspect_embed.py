@@ -11,7 +11,8 @@ sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 
-from util import load_ckpt, generate_dset
+from util import load_ckpt
+from preprocessor import generate_dset
 
 
 import pdb

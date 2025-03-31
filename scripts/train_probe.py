@@ -10,7 +10,8 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 
 from attentive_probe import train_classifier_model
-from util import load_ckpt, generate_dset
+from util import load_ckpt
+from preprocessor import generate_dset
 
 import pdb
 

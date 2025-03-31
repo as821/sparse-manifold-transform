@@ -5,6 +5,7 @@ from einops import rearrange
 
 from preprocessor import ImagePreprocessor, generate_dset
 
+import pdb
 
 
 class WeightedKNNClassifier():
@@ -76,12 +77,6 @@ class WeightedKNNClassifier():
                     if torch.cuda.is_available():
                         tf = tf.to("cuda", non_blocking=True)   
                     similarities[:, start:end] = torch.mm(features, tf)
-
-                # similarities = torch.mm(features, train_features)
-
-
-            # elif self.distance_fx == "euclidean":
-            #     similarities = 1 / (torch.cdist(features, train_features) + self.epsilon)
             else:
                 raise NotImplementedError
 
@@ -116,21 +111,20 @@ class WeightedKNNClassifier():
 
 
 
-def test_set_classify(args, train_set, sc_layer, smt_layer, train_embed, train_labels):
+def eval_knn_classifier(args, train_set, sc_layer, smt_layer):
     print("Test set evaluation.", flush=True)
 
-    dset = generate_dset(args, 'test', train_set)
-    betas, img_label = dset.generate_data(args.test_samples, test=True)
+    # generate train set embeddings + labels
+    train_embed, train_labels = train_set.generate_embeddings(sc_layer, smt_layer, cuda=True)
+    train_embed = rearrange(train_embed, "a (b c) d -> a b c d", b=train_set.n_patch_per_dim)
+    train_embed = ImagePreprocessor.aggregate_image_embed(train_embed)
 
-    # Calculate embedding of test set images using learned SMT
-    print("Calculating SMT embeddings...", flush=True)
-    betas = sc_layer(args, betas, test=True)
-    betas = smt_layer(betas)
-
-    betas = rearrange(betas, "d (a b c) -> a b c d", a=args.test_samples, b=dset.n_patch_per_dim, c=dset.n_patch_per_dim, d=args.embed_dim)
-
-    img_embed = ImagePreprocessor.aggregate_image_embed(betas)
+    # generate test set embeddings and labels
+    test_set = generate_dset(args, 'test', train_set)
+    test_embed, test_label = test_set.generate_embeddings(sc_layer, smt_layer, cuda=True)
+    test_embed = rearrange(test_embed, "a (b c) d -> a b c d", b=test_set.n_patch_per_dim)
+    test_embed = ImagePreprocessor.aggregate_image_embed(test_embed)
 
     # Apply k-NN classifier to test set embeddings
-    print("Calculating test accuracy...", flush=True)    
-    return WeightedKNNClassifier(k=args.nnclass_k, T=args.knn_temp).compute(args.classify_chunk, train_embed, train_labels, img_embed, img_label)
+    classifier = WeightedKNNClassifier(k=args.nnclass_k, T=args.knn_temp)
+    return classifier.compute(args.classify_chunk, train_embed, train_labels, test_embed, test_label)

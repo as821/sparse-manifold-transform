@@ -45,8 +45,6 @@ def generate_dict(args, dset, dict_sz, dict_thresh):
     """Generate dictionary elements from the already generated data points.
     NOTE: could run dictionary learning with multiple initialization and pick the best (like normal K-Means)
     """
-    print("Generating dictionary...", flush=True)
-
     # Return a random selection of (unique) image patches as the dictionary to use
     ptr = 0 
     patch_dim = dset.n_inp_channels * args.patch_sz * args.patch_sz

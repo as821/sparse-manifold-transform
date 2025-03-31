@@ -19,10 +19,10 @@ sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 
-from util import generate_dset_dict_codes, generate_argparser, validate_args, save_ckpt, generate_dset
-from classifier import test_set_classify
+from util import generate_argparser, validate_args, save_ckpt
+from classifier import eval_knn_classifier
 
-from preprocessor import ImagePreprocessor
+from preprocessor import ImagePreprocessor, generate_dset
 from manifold_embedding import ManifoldEmbedLayer
 from sparse_code import generate_dict, SparseCodeLayer
 
@@ -38,34 +38,16 @@ def main(args):
     dset.calc_whitening()
 
     # generate dictionary
+    print("Generating dictionary")
     sc_layer = SparseCodeLayer(args.dict_sz, generate_dict(args, dset, args.dict_sz, args.dict_thresh), args.gq_thresh)
 
     # calculate embeddings
+    print("Calculating manifold transform")
     smt_layer = ManifoldEmbedLayer(args, dset, sc_layer)
-
-    pdb.set_trace()
-
-
-    # TODO: save checkpoint
-
-
-
-
-    # TODO: optionally, run classifier
-
-
-    print(f"Calculating layer embeddings...", flush=True)
-    betas = smt_layer(alphas)
-    if isinstance(alphas.data, (np.memmap)):
-        mmap_csr_cleanup(alphas)
-
-    # Normalize image patches and aggregate into image-level representation
-    betas = rearrange(betas, "d (a b c) -> a b c d", a=args.samples, b=dset.n_patch_per_dim, c=dset.n_patch_per_dim, d=args.embed_dim)
-    assert betas.shape[0] == args.samples and betas.shape[1] == betas.shape[2] == dset.n_patch_per_dim and betas.shape[3] == args.embed_dim
-    img_embed = ImagePreprocessor.aggregate_image_embed(betas)
-
-    print("Test set accuracy: ", test_set_classify(args, dset, sc_layer, smt_layer, img_embed, img_label))
     save_ckpt("/home/astange/smt_ckpt", args, sc_layer, smt_layer, dset)
+
+    # run k-NN classifier
+    print("Test set accuracy: ", eval_knn_classifier(args, dset, sc_layer, smt_layer))
 
 if __name__ == "__main__":
     start_time = time.time()

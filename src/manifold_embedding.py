@@ -17,15 +17,8 @@ import pdb
 class ManifoldEmbedLayer:
     def __init__(self, args, dset, sc_layer, proj=None):
         self.args = args
-        if proj is not None:
-            # loading from checkpoint (convert input projection matrix to mmap)
-            
-            # TODO: remove mmap stuff...
-            t_fname = args.mmap_path + "/smt_proj_dense_T.bin"
-            mmap_file_init(t_fname, proj)
-            self.projection = np.memmap(t_fname, shape=proj.shape, dtype=proj.dtype)
-            
-            self.projection = torch.from_numpy(self.projection)
+        if proj is not None:    # loading from checkpoint
+            self.projection = proj
             self.embed_dim = embed_dim
             return
 
@@ -132,6 +125,8 @@ class ManifoldEmbedLayer:
     @torch.compiler.disable
     def __call__(self, x):
         """Apply calculated SMT to given inputs, return their embeddings."""        
+        if self.projection.device != x.device:
+            self.projection = self.projection.to(x.device)
         beta_flat = self.projection @ x
         beta_flat /= (torch.linalg.vector_norm(beta_flat, dim=1).unsqueeze(1) + 1e-10)
         return beta_flat

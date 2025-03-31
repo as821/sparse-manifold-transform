@@ -187,10 +187,9 @@ class ImagePreprocessor():
         # Return a single preprocessed image
         assert idx < len(self.dataset)
         sample = self.dataset[idx]
-        label = sample[1]
         patches = self.img_to_centered_patches(sample[0].to("cuda:0" if cuda else "cpu"), stride)
         patches = self._whiten_normalize_patch(patches)
-        return patches, label
+        return patches, sample[1]
 
     def get_context_pairs(self, context_sz):
         """Return the set of all patch context pairs for a single image in this dataset."""
@@ -244,14 +243,13 @@ class ImagePreprocessor():
     def aggregate_image_embed(betas, ks=4, stride=2):
         """Aggregate patch-level embeddings into image-level embeddings for each image, following procedure outlined by (2)"""
         print("Aggregating image embeddings...")
-        betas = torch.from_numpy(betas).permute((0, 3, 1, 2))
+        betas = betas.permute((0, 3, 1, 2))
 
         pool = torch.nn.AvgPool2d(kernel_size=ks, stride=stride)
         dev = 'cpu'
         if torch.cuda.is_available():
             pool = pool.to("cuda", non_blocking=True)
             dev = 'cuda:0'
-            torch.cuda.empty_cache()
 
         sz = pool(betas[0].to(dev)).shape[-1]       # pass single image through to get output shape
 
@@ -265,9 +263,17 @@ class ImagePreprocessor():
             betas[start:end, :, :sz, :sz] = chnk.cpu()
 
         betas = betas[:, :, :sz, :sz]
-        if torch.cuda.is_available(): torch.cuda.empty_cache()
         return torch.flatten(betas, start_dim=1)
 
+    def generate_embeddings(self, sc_layer, smt_layer, stride=1, cuda=False):
+        """Apply calculated SMT to this dataset. NOTE: uses full dataset regardless of args"""
+        embed = torch.zeros((len(self.dataset), self.n_patch_per_img, self.args.embed_dim), device="cpu")
+        labels = torch.zeros((len(self.dataset)), device="cpu")
+        for idx in tqdm(range(len(self.dataset))):
+            patches, label = self.get_single_eval_image(idx, stride, cuda)
+            embed[idx, :] = smt_layer(sc_layer(patches)).T.cpu()
+            labels[idx] = label
+        return embed, labels
 
 def _context(x, y, n_patches, context_sz):
     """Given the index of a patch in the image, return the indices of its neighbors (context). DOES NOT include the given index."""
