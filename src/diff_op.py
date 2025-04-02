@@ -11,9 +11,9 @@ class DifferentialOperator():
         # initialize the differential operator to use if there are no patches with a code of all zeros
         self.ctx_pairs = dset.get_context_pairs(self.args.context_sz)
         if self.args.optim == "one":
-            self.diff_op = self._opt1_diff_op()
+            self.diff_op, self.index = self._opt1_diff_op()
         elif self.args.optim == "two":
-            self.diff_op = opt2_diff_op(args, dset)
+            self.diff_op, self.index = opt2_diff_op(args, dset)
         else:
             assert False, "Invalid differential operator version"
         
@@ -31,14 +31,15 @@ class DifferentialOperator():
             # construct a custom differential operator for this image to preserve sum to zero properties
             self.custom_dop += 1
             zero_ind = set(torch.where(code_sum == 0)[0].tolist())
-            ret = self._opt1_diff_op(zero_ind)
+            ret = self._opt1_diff_op_prune(zero_ind).to("cuda", non_blocking=True)
             ret = ret @ ret.T
             if ret.device != patches.device:
                 ret = ret.to(patches.device, non_blocking=True)
             return ret
 
-    def _opt1_diff_op(self, zero_ind=set()):
+    def _opt1_diff_op(self):
         """Implement first-derivative contextual operator for a single image. (#patch / img) x (2 * num. neighbor pairs) matrix since context pairs needs to be symmetric"""
+        index = {}
         mx = torch.zeros((self.dset.n_patch_per_img, len(self.ctx_pairs) * 2))
         for idx, px_pair in enumerate(self.ctx_pairs):
             pos_pixel = px_pair[0]
@@ -49,15 +50,31 @@ class DifferentialOperator():
             neg_idx = neg_pixel[0] * self.dset.n_patch_per_dim + neg_pixel[1]
             assert pos_idx != neg_idx
 
-            if pos_idx in zero_ind or neg_idx in zero_ind:
-                continue
+            if pos_idx not in index:
+                index[pos_idx] = []
+            if neg_idx not in index:
+                index[neg_idx] = []
 
             # need to include both ways
             mx[pos_idx, 2 * idx] = 1
             mx[neg_idx, 2 * idx] = -1
             mx[pos_idx, 2 * idx + 1] = -1
             mx[neg_idx, 2 * idx + 1] = 1
-        return mx
+
+            index[pos_idx].append((pos_idx, 2 * idx))
+            index[pos_idx].append((neg_idx, 2 * idx))
+            index[neg_idx].append((pos_idx, 2 * idx))
+            index[neg_idx].append((neg_idx, 2 * idx))
+
+        return mx, index
+
+    def _opt1_diff_op_prune(self, zero_ind):
+        op = self.diff_op.clone()
+        for idx in zero_ind:
+            for pr in self.index[idx]:
+                op[pr[0], pr[1]] = 0
+                op[pr[0], pr[1] + 1] = 0
+        return op
 
     
 def opt2_partial_diff_op_preproc(ctx_sz, n_patch_per_img, n_patch_per_dim):

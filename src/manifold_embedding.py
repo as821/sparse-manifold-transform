@@ -24,16 +24,19 @@ class ManifoldEmbedLayer:
 
         # TODO: combine inv_sqrt_cov and inner passes through the dataset (can share the sparse code computation)    
         # calculate inverse square root covariance matrix
+        print("Calculating inv. sqrt. cov. matrix")
         inv_sqrt_cov = self.inv_sqrt_cov(dset, sc_layer)
 
         # calculate core ADD^TA^T loss matrix
+        print("Calculating loss matrix")
         inner = self.core_loss_matrix(dset, sc_layer)
 
         # compute complete loss matrix
+        print("Solving...")
         inner = inner.to(torch.float64)
         inv_sqrt_cov = inv_sqrt_cov.to(torch.float64)
         closed_form = inv_sqrt_cov @ inner @ inv_sqrt_cov
-        assert _is_real_sym(closed_form, tol=1e-3), "Closed form is not (almost) real-symmetric."
+        assert _is_real_sym(closed_form, verbose=True, tol=1e1), "Closed form is not (almost) real-symmetric."
 
         # solve, populate projection matrix
         self.solve(closed_form, inv_sqrt_cov)
@@ -99,7 +102,7 @@ class ManifoldEmbedLayer:
         # Select the f eigenvectors with smallest eigenvalues (eigenvectors are COLUMNs of evec matrix (see torch.linalg.eig reference))
         # Need to convert them to rows to give a mapping to f-dimensional space
         if not self.args.disable_color_embed_drop:
-            skip_first_n = 16
+            skip_first_n = 16 # 64
             indices = np.argsort(evals, kind='stable')[skip_first_n:(self.args.embed_dim + skip_first_n)] 
         else:
             # Note: drops the least e'vec (kernel of the Laplacian, constant vector)

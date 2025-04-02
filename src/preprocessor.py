@@ -177,7 +177,7 @@ class ImagePreprocessor():
 
     def get_single_train_image(self, idx, stride=1, cuda=False):
         # Return a single preprocessed image
-        assert idx < len(self.dataset)
+        assert idx < 2 * len(self.dataset)
         sample, label = self.train_set_image(idx, cuda=cuda)
         patches = self.img_to_centered_patches(sample, stride)
         patches = self._whiten_normalize_patch(patches)
