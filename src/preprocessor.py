@@ -160,6 +160,7 @@ class ImagePreprocessor():
         def sub(patches):
             return patches - mean
         cov_mx = self.apply_and_reduce(sub, stride, cuda=True, whiten=False) / (self.args.samples * self.n_patch_per_img)
+        cov_mx = cov_mx.to(torch.float32)
         cov_mx = torch_force_symmetric(cov_mx)
 
         # Calculate whitening/unwhitening

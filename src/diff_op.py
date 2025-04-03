@@ -3,22 +3,25 @@ from tqdm import tqdm
 
 import pdb
 
+from preprocessor import _context
+
 class DifferentialOperator():
     def __init__(self, args, dset):
         self.args = args
         self.dset = dset
+        self.custom_dop = 0
         
         # initialize the differential operator to use if there are no patches with a code of all zeros
         self.ctx_pairs = dset.get_context_pairs(self.args.context_sz)
         if self.args.optim == "one":
             self.diff_op, self.index = self._opt1_diff_op()
+            self.diff_op_sq = self.diff_op @ self.diff_op.T
         elif self.args.optim == "two":
-            self.diff_op, self.index = opt2_diff_op(args, dset)
+            self.diff_op, self.index = self._opt2_diff_op()
+            full_dop = self._opt2_diff_op_prune(set())      # _opt2_diff_op only generates a partially populated matrix
+            self.diff_op_sq = full_dop @ full_dop.T
         else:
-            assert False, "Invalid differential operator version"
-        
-        self.diff_op_sq = self.diff_op @ self.diff_op.T
-        self.custom_dop = 0
+            assert False, "Invalid differential operator version"        
 
     def get_bilinear_form(self, patches):
         # TODO: do we actually need to support this? how does it affect performance?
@@ -31,7 +34,12 @@ class DifferentialOperator():
             # construct a custom differential operator for this image to preserve sum to zero properties
             self.custom_dop += 1
             zero_ind = set(torch.where(code_sum == 0)[0].tolist())
-            ret = self._opt1_diff_op_prune(zero_ind).to("cuda", non_blocking=True)
+            if self.args.optim == "one":
+                ret = self._opt1_diff_op_prune(zero_ind).to("cuda", non_blocking=True)
+            elif self.args.optim == "two":
+                ret = self._opt2_diff_op_prune(zero_ind)
+            else:
+                assert False, "Invalid differential operator version"
             ret = ret @ ret.T
             if ret.device != patches.device:
                 ret = ret.to(patches.device, non_blocking=True)
@@ -76,36 +84,35 @@ class DifferentialOperator():
                 op[pr[0], pr[1] + 1] = 0
         return op
 
-    
-def opt2_partial_diff_op_preproc(ctx_sz, n_patch_per_img, n_patch_per_dim):
-    dop = np.zeros(shape=(n_patch_per_img, n_patch_per_img), dtype=np.float32)
-    for pidx in range(n_patch_per_img):
-        x = int(pidx / n_patch_per_dim)
-        y = int(pidx % n_patch_per_dim)
-        ctx = _context(x, y, n_patch_per_dim, ctx_sz)
-        for px_pair in ctx:
-            n_x, n_y = px_pair
-            neighbor_idx = n_x * n_patch_per_dim + n_y
-            dop[neighbor_idx, pidx] = -1
-    return dop
+    def _opt2_diff_op(self):
+        # A partially constructed differential operator, without its central diagonal populated
+        mx = torch.zeros((self.dset.n_patch_per_img, self.dset.n_patch_per_img))
+        for pidx in range(self.dset.n_patch_per_img):
+            x = int(pidx / self.dset.n_patch_per_dim)
+            y = int(pidx % self.dset.n_patch_per_dim)
+            ctx = _context(x, y, self.dset.n_patch_per_dim, self.args.context_sz)
+            for px_pair in ctx:
+                n_x, n_y = px_pair
+                neighbor_idx = n_x * self.dset.n_patch_per_dim + n_y
+                mx[neighbor_idx, pidx] = -1
+        return mx, None
 
-def opt2_partial_diff_op_prune(dop, n_patch_per_img, zero_code):
-    # Outputs a (# patch per image x # patch per image) matrix. Diagonal entries are 1, all others are negative, columns must sum to zero
+    def _opt2_diff_op_prune(self, zero_ind):
+        # Outputs a (# patch per image x # patch per image) matrix. Diagonal entries are 1, all others are negative, columns must sum to zero
+        # prune all references to zero codes
+        op = self.diff_op.clone().to("cuda", non_blocking=True)
+        op[list(zero_ind), :] = 0
+        op[:, list(zero_ind)] = 0
 
-    # prune all references to zero codes
-    dop[list(zero_code), :] = 0
-    dop[:, list(zero_code)] = 0
+        # scale remaining neighbor entries (normalize over columns for )
+        s = torch.sum(op, dim=0, keepdims=True)
+        s *= -1
+        s_zero_idx = s == 0
+        s[s_zero_idx] = 1       # avoid div by zero
+        op /= s
 
-    # scale remaining neighbor entries (normalize over columns for )
-    s = np.sum(dop, axis=0, keepdims=True)
-    s *= -1
-    s_zero_idx = s == 0
-    s[s_zero_idx] = 1       # avoid div by zero
-    dop /= s
-
-    # set diagonal for "original images" to 1 (if patch for column is not zero and if it has any nonzero neighbors)
-    r = [i for i in range(n_patch_per_img) if i not in zero_code and not s_zero_idx[0][i]]
-    dop[r, r] = 1
-
-    return dop
+        # set diagonal for "original images" to 1 (if patch for column is not zero and if it has any nonzero neighbors)
+        r = [i for i in range(self.dset.n_patch_per_img) if i not in zero_ind and not s_zero_idx[0][i]]
+        op[r, r] = 1
+        return op
 
