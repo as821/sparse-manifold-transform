@@ -4,6 +4,7 @@ from tqdm import tqdm
 
 import torchvision
 import torchvision.transforms as transforms
+from torch.utils.data import DataLoader, Dataset
 import resource
 import numpy as np
 import time
@@ -31,6 +32,19 @@ def generate_dset(args, split='train', train_set=None, whiten_op=None, unwhiten_
         raise NotImplementedError
     return dset
 
+
+class PatchDataset(Dataset):
+    def __init__(self, parent, num_samples, stride):
+        self.parent = parent
+        self.num_samples = num_samples
+        self.stride = stride
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, idx):
+        img = self.parent.train_set_image(idx, False)[0]
+        return img
 
 class ImagePreprocessor():
     def __init__(self, args, dset_obj, split='train', n_channels=None, whiten_op=None, unwhiten_op=None):
@@ -92,10 +106,19 @@ class ImagePreprocessor():
         return patches
 
     def apply_and_reduce(self, func, stride=1, cuda=False, whiten=True, bilinear_func=None):
+        # TODO: slowest part of this loop are the patches matmuls by far (followed by the addition at the bottom)
+
+        # weirdly pinned memory is a bit slower, maybe due to very small allocation/transfer sizes?
+        data_loader = DataLoader(PatchDataset(self, self.args.samples, stride), batch_size=1, shuffle=False, num_workers=16, pin_memory=False)
+        
         # Generate centered (and possibly whitened) image patches for an image, apply the given function, then perform a matrix multiplication over the dataset
         out = None
-        for idx in tqdm(range(self.args.samples)):
-            patches = self.img_to_centered_patches(self.train_set_image(idx, cuda)[0], stride)
+        for img in tqdm(data_loader):
+            assert img.shape[0] == 1        # batch size 1
+            img = img[0]
+            img = img.to("cuda", non_blocking=True)
+
+            patches = self.img_to_centered_patches(img, stride)
             if whiten:
                 patches = self._whiten_normalize_patch(patches)
             if func is not None:
