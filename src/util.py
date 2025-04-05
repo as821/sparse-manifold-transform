@@ -56,8 +56,8 @@ def generate_argparser():
     # Classifier
     parser.add_argument('--nnclass-k', default=30, type=int, help='value of k for k-NN classifier')
     parser.add_argument('--knn_temp', default=0.03, type=float, help='temperatur for soft k-NN classifier')
-
     parser.add_argument('--classify_chunk', default=500, type=int, help='chunk size used when classifying test-set images')
+    parser.add_argument('--full_dset_eval', action='store_true', help='run classifier with full dataset, not just the train set')
 
     return parser
 

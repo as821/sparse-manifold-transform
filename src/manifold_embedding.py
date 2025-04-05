@@ -42,16 +42,13 @@ class ManifoldEmbedLayer:
         self.solve(closed_form, inv_sqrt_cov)
 
     def inv_sqrt_cov(self, dset, sc_layer, stride=1):
-        # Calculate mean over all patches
-        mean = dset.apply_and_sum(sc_layer.sparse_code_img, dim=1, stride=stride, cuda=True, whiten=True)    
-        mean /= (self.args.samples * dset.n_patch_per_img)
-        mean = mean.unsqueeze(-1)
+        # NOTE: this is a misnormer. we are actually calculating the cross correlation matrix (not mean centered!)
+        # Calculate uncentered covariance matrix
+        def func(patches):
+            return sc_layer.sparse_code_img(patches).T
+        cov_mx = dset.apply_and_reduce(func, stride, cuda=True) 
+        cov_mx /= (self.args.samples * dset.n_patch_per_img)
 
-        # Calculate centered covariance matrix
-        def sub(patches):
-            return (sc_layer.sparse_code_img(patches) - mean).T
-        cov_mx = dset.apply_and_reduce(sub, stride, cuda=True) / (self.args.samples * dset.n_patch_per_img)
-        
         # matrix inverse sqrt
         cov_mx = torch_force_symmetric(cov_mx)
         assert _is_real_sym(cov_mx)

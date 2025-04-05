@@ -115,13 +115,14 @@ def eval_knn_classifier(args, train_set, sc_layer, smt_layer):
     print("Test set evaluation.", flush=True)
 
     # generate train set embeddings + labels
-    train_embed, train_labels = train_set.generate_embeddings(sc_layer, smt_layer, cuda=True)
+    train_samples = -1 if args.full_dset_eval else args.samples
+    train_embed, train_labels = train_set.generate_embeddings(train_samples, sc_layer, smt_layer, cuda=True)
     train_embed = rearrange(train_embed, "a (b c) d -> a b c d", b=train_set.n_patch_per_dim)
     train_embed = ImagePreprocessor.aggregate_image_embed(train_embed)
 
     # generate test set embeddings and labels
     test_set = generate_dset(args, 'test', train_set)
-    test_embed, test_label = test_set.generate_embeddings(sc_layer, smt_layer, cuda=True)
+    test_embed, test_label = test_set.generate_embeddings(-1, sc_layer, smt_layer, cuda=True)
     test_embed = rearrange(test_embed, "a (b c) d -> a b c d", b=test_set.n_patch_per_dim)
     test_embed = ImagePreprocessor.aggregate_image_embed(test_embed)
 

@@ -84,8 +84,8 @@ class ImagePreprocessor():
         # _, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (65536*16, 65536*16))
 
-        self.ctx_kernel_size = 2 * self.args.context_sz + 1
-        self.ctx_kernel = torch.ones((1, 1, self.ctx_kernel_size, self.ctx_kernel_size), device="cuda")
+        # self.ctx_kernel_size = 2 * self.args.context_sz + 1
+        # self.ctx_kernel = torch.ones((1, 1, self.ctx_kernel_size, self.ctx_kernel_size), device="cuda")
 
     def img_to_centered_patches(self, img, stride):
         patches = torch.nn.functional.unfold(img, self.args.patch_sz, stride=stride).clone()
@@ -93,16 +93,23 @@ class ImagePreprocessor():
         assert n_patch_per_dim ** 2 == patches.shape[1]
         patches = rearrange(patches, "(a b) (c d) -> c d b a", a=self.n_inp_channels, c=n_patch_per_dim, d=n_patch_per_dim)
 
-        # context mean is per-channel (and per patch location as well)
-        tmp_patches = rearrange(patches, "a b c d -> (c d) a b").unsqueeze(1)
-        ctx_sums = torch.nn.functional.conv2d(tmp_patches, self.ctx_kernel, padding=self.args.context_sz)[:, 0, ...]
-        
-        # accurately determine the context size for each patch (should be able to just do this in the constructor)
-        ones = torch.ones_like(tmp_patches)
-        ctx_cnts = torch.nn.functional.conv2d(ones, self.ctx_kernel, padding=self.args.context_sz)[:, 0, ...]
-        ctx_means = rearrange(ctx_sums / ctx_cnts, "(c d) a b -> a b c d", c=patches.shape[2])
+        # TODO: this logic is wrong somehow
+        # # context mean is per-channel (and per patch location as well)
+        # tmp_patches = rearrange(patches, "a b c d -> (c d) a b").unsqueeze(1)
+        # ctx_sums = torch.nn.functional.conv2d(tmp_patches, self.ctx_kernel, padding=self.args.context_sz)[:, 0, ...]
 
-        patches -= ctx_means
+        # # accurately determine the context size for each patch (should be able to just do this in the constructor)
+        # ones = torch.ones_like(tmp_patches)
+        # ctx_cnts = torch.nn.functional.conv2d(ones, self.ctx_kernel, padding=self.args.context_sz)[:, 0, ...]
+        # ctx_means = rearrange(ctx_sums / ctx_cnts, "(c d) a b -> a b c d", c=patches.shape[2])
+        # NOTE: this should be true when context size == full image
+        # assert (ctx_means - patches.mean()).abs().max() < 1e-3
+        # patches -= ctx_means
+        
+        # works for full image context size
+        assert self.args.context_sz == 32
+        patches -= patches.mean()
+
         patches = rearrange(patches, "b c d e -> (b c) (d e)")
         return patches
 
@@ -187,7 +194,7 @@ class ImagePreprocessor():
             if len(sample) == 1:
                 sample = (img,)
             else:
-                sample = (img, sample[1])
+                sample = (img, sample[1])        
         return sample
 
     def _whiten_normalize_patch(self, patches):
@@ -290,11 +297,13 @@ class ImagePreprocessor():
         betas = betas[:, :, :sz, :sz]
         return torch.flatten(betas, start_dim=1)
 
-    def generate_embeddings(self, sc_layer, smt_layer, stride=1, cuda=False):
+    def generate_embeddings(self, n_samples, sc_layer, smt_layer, stride=1, cuda=False):
         """Apply calculated SMT to this dataset. NOTE: uses full dataset regardless of args"""
-        embed = torch.zeros((len(self.dataset), self.n_patch_per_img, self.args.embed_dim), device="cpu")
-        labels = torch.zeros((len(self.dataset)), device="cpu")
-        for idx in tqdm(range(len(self.dataset))):
+        if n_samples <= 0:
+            n_samples = len(self.dataset)
+        embed = torch.zeros((n_samples, self.n_patch_per_img, self.args.embed_dim), device="cpu")
+        labels = torch.zeros((n_samples), device="cpu")
+        for idx in tqdm(range(n_samples)):
             patches, label = self.get_single_eval_image(idx, stride, cuda)
             embed[idx, :] = smt_layer(sc_layer(patches)).T.cpu()
             labels[idx] = label

@@ -99,10 +99,6 @@ def generate_dict(args, dset, dict_sz, dict_thresh):
     if torch.cuda.is_available():
         phi = phi.cpu()
 
-    # shuffle dictionary elements to avoid having dict elements with densest codes being grouped together in the low indices of the dictionary (allows increasing size of GPU slices later)
-    perm = torch.randperm(phi.shape[1])
-    phi = phi[:, perm]
-
     if torch.cuda.is_available(): torch.cuda.empty_cache()
 
     return phi.float()
