@@ -84,12 +84,8 @@ class ImagePreprocessor():
         # _, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (65536*16, 65536*16))
 
-        # Calculate context size for each patch location
-        # NOTE: patches are stored in row-major order. x is used to index rows and y is used to index columns
-        self.context_sz_mx = torch.zeros(size=(self.n_patch_per_dim, self.n_patch_per_dim))
-        for x in range(self.n_patch_per_dim):
-            for y in range(self.n_patch_per_dim):
-                self.context_sz_mx[x, y] = len(_context(x, y, self.n_patch_per_dim, self.context_sz)) + 1
+        self.ctx_kernel_size = 2 * self.args.context_sz + 1
+        self.ctx_kernel = torch.ones((1, 1, self.ctx_kernel_size, self.ctx_kernel_size), device="cuda")
 
     def img_to_centered_patches(self, img, stride):
         patches = torch.nn.functional.unfold(img, self.args.patch_sz, stride=stride).clone()
@@ -97,11 +93,16 @@ class ImagePreprocessor():
         assert n_patch_per_dim ** 2 == patches.shape[1]
         patches = rearrange(patches, "(a b) (c d) -> c d b a", a=self.n_inp_channels, c=n_patch_per_dim, d=n_patch_per_dim)
 
-        # TODO: this should be per-channel!!
-        # context size == image size, keep things simple for now
-        assert self.context_sz == 32
-        patches = patches - patches.mean()
+        # context mean is per-channel (and per patch location as well)
+        tmp_patches = rearrange(patches, "a b c d -> (c d) a b").unsqueeze(1)
+        ctx_sums = torch.nn.functional.conv2d(tmp_patches, self.ctx_kernel, padding=self.args.context_sz)[:, 0, ...]
+        
+        # accurately determine the context size for each patch (should be able to just do this in the constructor)
+        ones = torch.ones_like(tmp_patches)
+        ctx_cnts = torch.nn.functional.conv2d(ones, self.ctx_kernel, padding=self.args.context_sz)[:, 0, ...]
+        ctx_means = rearrange(ctx_sums / ctx_cnts, "(c d) a b -> a b c d", c=patches.shape[2])
 
+        patches -= ctx_means
         patches = rearrange(patches, "b c d e -> (b c) (d e)")
         return patches
 
