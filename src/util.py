@@ -52,6 +52,7 @@ def generate_argparser():
     # SMT Embedding
     parser.add_argument('--embed-dim', default=384, type=int, help='feature manifold dimension (patch embedding dimension, image-level embedding will be much larger)')
     parser.add_argument('--disable_color_embed_drop', action='store_true', help='do not drop the first 16 embedding dim')
+    parser.add_argument('--skip_first_n', default=16, type=int, help='feature manifold dimension (patch embedding dimension, image-level embedding will be much larger)')
 
     # Classifier
     parser.add_argument('--nnclass-k', default=30, type=int, help='value of k for k-NN classifier')
