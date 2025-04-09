@@ -3,6 +3,8 @@ import numpy as np
 from time import time
 import scipy.sparse as sp
 
+import matplotlib.pyplot as plt
+
 def _all_close(a, b, tol=1e-5):
     return (torch.abs(a - b) < tol).all()
 
@@ -67,3 +69,17 @@ def profile_log(enable, running, out):
         running = time()
     return running
 
+def visualize_matrix(args, matrix, name):
+    if not args.debug_vis:
+        return
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(matrix.cpu().numpy(), cmap='coolwarm')
+
+    cbar = ax.figure.colorbar(im, ax=ax)
+    ax.set_title(name)
+    fig.tight_layout()
+
+    path = args.ckpt_path + name + ".png"
+    plt.savefig(path, dpi=300, bbox_inches='tight')
+    print(f"Saved: ({name}) to {path}")
+    plt.close()

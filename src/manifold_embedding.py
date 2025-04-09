@@ -7,8 +7,7 @@ from tqdm import tqdm
 from random import randint
 import shutil
 
-from matrix_utils import mx_inv_sqrt, _is_real_sym, torch_force_symmetric
-
+from matrix_utils import mx_inv_sqrt, _is_real_sym, torch_force_symmetric, visualize_matrix
 
 from diff_op import DifferentialOperator
 
@@ -30,12 +29,14 @@ class ManifoldEmbedLayer:
         # calculate core ADD^TA^T loss matrix
         print("Calculating loss matrix")
         inner = self.core_loss_matrix(dset, sc_layer)
+        visualize_matrix(self.args, inner, "inner_loss_matrix")
 
         # compute complete loss matrix
         print("Solving...")
         inner = inner.to(torch.float64)
         inv_sqrt_cov = inv_sqrt_cov.to(torch.float64)
         closed_form = inv_sqrt_cov @ inner @ inv_sqrt_cov
+        visualize_matrix(self.args, closed_form, "full_loss_matrix")
         assert _is_real_sym(closed_form, verbose=True, tol=1e1), "Closed form is not (almost) real-symmetric."
 
         # solve, populate projection matrix
@@ -48,6 +49,7 @@ class ManifoldEmbedLayer:
             return sc_layer.sparse_code_img(patches).T
         cov_mx = dset.apply_and_reduce(func, stride, cuda=True) 
         cov_mx /= (self.args.samples * dset.n_patch_per_img)
+        visualize_matrix(self.args, cov_mx, "sc_cov_matrix")
 
         # matrix inverse sqrt
         cov_mx = torch_force_symmetric(cov_mx)

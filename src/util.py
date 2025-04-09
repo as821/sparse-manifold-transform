@@ -36,6 +36,10 @@ def generate_argparser():
     parser.add_argument('--test-samples', default=10000, type=int, help='number of training samples to use')
     parser.add_argument('--optim', default='two', choices=['one', 'two'], help='optimization equation to use from (2), naming follows the equation numbers from that paper. "one" is first deriv., "two" is second deriv.')
 
+    parser.add_argument('--ckpt-path', default="/home/astange/smt_ckpt", type=str, help='path store checkpoint and visulizations')
+    parser.add_argument('--debug_vis', action='store_true', help='store debug visualizations to the checkpoint directory')
+
+
     # Image pre-processor
     parser.add_argument('--patch-sz', default=6, type=int, help='image patch size')
     parser.add_argument('--context-sz', default=32, type=int, help='other patches within this number of pixels is considered a neighbor')
@@ -84,9 +88,7 @@ def load_ckpt(path, dense=False):
     
     return args, sc_layer, smt_layer, whiten_op, unwhiten_op
 
-def save_ckpt(ckpt_path, args, sc_layer, smt_layer, dset):
-    # generate directory for checkpoint
-    print("Saving checkpoint...", flush=True)
+def get_ckpt_path(ckpt_path):
     if not os.path.exists(ckpt_path):
         os.mkdir(ckpt_path)
         path = ckpt_path
@@ -99,6 +101,12 @@ def save_ckpt(ckpt_path, args, sc_layer, smt_layer, dset):
             path += "/"
         path += f"ckpt_{int(time())}/"
         os.mkdir(path)
+    return path
+
+def save_ckpt(path, args, sc_layer, smt_layer, dset):
+    # generate directory for checkpoint
+    assert os.path.exists(path)
+    print("Saving checkpoint...", flush=True)
 
     # save dictionary, embedding matrix, + a copy of the arguments
     torch.save(sc_layer.basis, path + "sc_basis.pt")
