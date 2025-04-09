@@ -19,7 +19,7 @@ sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 
-from util import generate_argparser, validate_args, save_ckpt
+from util import generate_argparser, validate_args, save_ckpt, get_ckpt_path
 from classifier import eval_knn_classifier
 
 from preprocessor import ImagePreprocessor, generate_dset
@@ -32,6 +32,7 @@ import pdb
 def main(args):
     # set up dataset
     dset = generate_dset(args)
+    args.ckpt_path = get_ckpt_path(args.ckpt_path)
 
     # calculate whitening + unwhitening matrices
     print("Calculating whitening operator")
@@ -43,7 +44,7 @@ def main(args):
 
     # calculate embeddings
     smt_layer = ManifoldEmbedLayer(args, dset, sc_layer)
-    save_ckpt("/home/astange/smt_ckpt", args, sc_layer, smt_layer, dset)
+    save_ckpt(args.ckpt_path, args, sc_layer, smt_layer, dset)
 
     # run k-NN classifier
     print("Test set accuracy: ", eval_knn_classifier(args, dset, sc_layer, smt_layer))
