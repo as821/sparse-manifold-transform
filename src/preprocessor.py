@@ -106,10 +106,12 @@ class ImagePreprocessor():
         # assert (ctx_means - patches.mean()).abs().max() < 1e-3
         # patches -= ctx_means
         
-        # works for full image context size
+        # per-channel means
         assert self.args.context_sz == 32
-        patches -= patches.mean()
-
+        m = torch.mean(patches, dim=(0, 1, 2))
+        assert m.shape[0] == 3
+        patches -= m
+        
         patches = rearrange(patches, "b c d e -> (b c) (d e)")
         return patches
 
