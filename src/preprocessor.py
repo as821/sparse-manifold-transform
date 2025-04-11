@@ -274,9 +274,21 @@ class ImagePreprocessor():
         ctx_means = res / (self.context_sz_mx.unsqueeze(0).unsqueeze(1) * self.input_patch_dim)
         return ctx_means.squeeze().unsqueeze(-1).unsqueeze(-1)
 
+    def pool_single_image_patches(embed, ks=4, stride=2):
+        # Like aggregate_image_embed but on flattened patches of a single patch (+ no flattening)
+        sz = int(math.sqrt(embed.shape[1]))
+        assert sz ** 2 == embed.shape[1]
+        embed = embed.to("cuda", non_blocking=True)
+        embed = rearrange(embed, "a (b c) -> a b c", b=sz)
+        pool = torch.nn.AvgPool2d(kernel_size=ks, stride=stride).to("cuda", non_blocking=True)
+        chnk = pool(embed)
+        norm = torch.linalg.vector_norm(chnk, ord=2, dim=0, keepdim=True)
+        chnk /= (norm + 1e-20)
+        return chnk.cpu()
+
     def aggregate_image_embed(betas, ks=4, stride=2):
         """Aggregate patch-level embeddings into image-level embeddings for each image, following procedure outlined by (2)"""
-        print("Aggregating image embeddings...")
+        print("Aggregating image embeddings...")    
         betas = betas.permute((0, 3, 1, 2))
 
         pool = torch.nn.AvgPool2d(kernel_size=ks, stride=stride)
@@ -288,16 +300,15 @@ class ImagePreprocessor():
         sz = pool(betas[0].to(dev)).shape[-1]       # pass single image through to get output shape
 
         chnk_sz = 50
+        out = torch.zeros((betas.shape[0], betas.shape[1], sz, sz))
         for start in tqdm(range(0, betas.shape[0], chnk_sz)):
             end = min(start + chnk_sz, betas.shape[0])
             chnk = pool(betas[start:end].to(dev))
             
             # Apply "point-wise L2 normalization" (L2 normalize each aggregated patch of each image)
             chnk /= (torch.linalg.vector_norm(chnk, ord=2, dim=1, keepdim=True) + 1e-20)
-            betas[start:end, :, :sz, :sz] = chnk.cpu()
-
-        betas = betas[:, :, :sz, :sz]
-        return torch.flatten(betas, start_dim=1)
+            out[start:end] = chnk.cpu()
+        return torch.flatten(out, 1, -1)
 
     def generate_embeddings(self, n_samples, sc_layer, smt_layer, stride=1, cuda=False):
         """Apply calculated SMT to this dataset. NOTE: uses full dataset regardless of args"""

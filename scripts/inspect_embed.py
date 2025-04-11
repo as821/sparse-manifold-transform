@@ -12,12 +12,33 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 
 from util import load_ckpt, get_ckpt_path
-from preprocessor import generate_dset
+from preprocessor import generate_dset, ImagePreprocessor
 from matrix_utils import visualize_matrix, visualize_histogram
 
 
 import pdb
 
+def embed_vis(args, n_samples, labels, embed, prefix):
+    # stats on embedding cosine similarity --> embeddings already normalized
+    embed = embed.flatten(0, 1)
+    cos_sim = embed @ embed.T
+    assert cos_sim.max() < (1 + 1e-3), f"Cosine similarity < 1. Bug somewhere: {cos_sim.max()}"        
+    visualize_matrix(args, cos_sim, prefix + "embed_cos_sim")
+    visualize_matrix(args, torch.cov(embed.T), prefix + "embed_dim_cov")
+
+    # cosine sim to other patches in the same image (double counts due to cosine similarity symmetry and includes self-similarity)
+    embed_hist = einops.rearrange(cos_sim, "(a b) (c d) -> a b c d", a=n_samples, c=n_samples)
+    intra_image_hist = embed_hist[torch.arange(n_samples), :, torch.arange(n_samples), :]
+    visualize_histogram(args, intra_image_hist.flatten(), prefix + "intra_image_sim")
+
+    # intra/inter class cosine similarity
+    intra_class, inter_class = [], []
+    for lab in torch.unique(labels):
+        mask = labels == lab
+        intra_class.append(embed_hist[mask][:, :, mask].flatten())
+        inter_class.append(embed_hist[mask][:, :, ~mask].flatten())
+    visualize_histogram(args, torch.concat(intra_class), prefix + "intra_class_sim")
+    visualize_histogram(args, torch.concat(inter_class), prefix + "inter_class_sim")
 
 def main(a):
     args, sc_layer, smt_layer, whiten_op, unwhiten_op = load_ckpt(a.path)
@@ -108,8 +129,11 @@ def main(a):
         smt_layer.projection = smt_layer.projection.to("cuda", non_blocking=True)
 
         n_patch_per_dict = torch.zeros(args.dict_sz)
-
+        
         n_samples = 50
+        agg_patch = ImagePreprocessor.pool_single_image_patches(smt_layer(sc_layer(dset.get_single_eval_image(0, a.stride)[0])).cpu()).shape[-1]
+        agg_embed = torch.zeros(n_samples, agg_patch ** 2, args.embed_dim)
+
         embed = torch.zeros(n_samples, dset.n_patch_per_img, args.embed_dim)
         labels = torch.zeros(n_samples)
         for idx in tqdm(range(n_samples)):
@@ -117,34 +141,16 @@ def main(a):
             labels[idx] = label
             img = img.to("cuda", non_blocking=True)
             sc = sc_layer(img)
-            embed[idx] = smt_layer(sc).T.unsqueeze(0).cpu()
+            smt = smt_layer(sc).cpu()
+            embed[idx] = smt.T.unsqueeze(0)
+            agg_embed[idx] = ImagePreprocessor.pool_single_image_patches(smt).flatten(1, -1).T
             
             # stats on which dictionary elements are the most/least frequent
             n_patch_per_dict += sc.sum(dim=1).cpu()
         
-        # stats on embedding cosine similarity --> embeddings already normalized
-        embed = embed.flatten(0, 1)
-        cos_sim = embed @ embed.T
-        assert cos_sim.max() < (1 + 1e-3), f"Cosine similarity < 1. Bug somewhere: {cos_sim.max()}"
-        
-        visualize_matrix(args, cos_sim, "embed_cos_sim")
-        visualize_matrix(args, torch.cov(embed.T), "embed_dim_cov")
-
-        embed_hist = einops.rearrange(cos_sim, "(a b) (c d) -> a b c d", a=n_samples, c=n_samples)
-
-        # cosine sim to other patches in the same image (double counts due to cosine similarity symmetry and includes self-similarity)
-        intra_image_hist = embed_hist[torch.arange(n_samples), :, torch.arange(n_samples), :]
-        visualize_histogram(args, intra_image_hist.flatten(), "intra_image_sim")
-
-        # intra/inter class cosine similarity
-        intra_class, inter_class = [], []
-        for lab in torch.unique(labels):
-            mask = labels == lab
-            intra_class.append(embed_hist[mask][:, :, mask].flatten())
-            inter_class.append(embed_hist[mask][:, :, ~mask].flatten())
-        visualize_histogram(args, torch.concat(intra_class), "intra_class_sim")
-        visualize_histogram(args, torch.concat(inter_class), "inter_class_sim")
-
+        # generate visualizations for both patch and aggregated patch embeddings
+        embed_vis(args, n_samples, labels, embed, "")
+        embed_vis(args, n_samples, labels, agg_embed, "agg_")
 
 
         # TODO: visualize some nearest neighbors in patch embedding space (within image, within class, within dataset)
