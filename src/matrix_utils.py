@@ -83,3 +83,19 @@ def visualize_matrix(args, matrix, name):
     plt.savefig(path, dpi=300, bbox_inches='tight')
     print(f"Saved: ({name}) to {path}")
     plt.close()
+
+def visualize_histogram(args, matrix, name, bins=30):
+    if not args.debug_vis:
+        return
+    
+    plt.figure(figsize=(10, 6))
+    plt.hist(matrix.cpu().numpy(), bins=bins, color='skyblue', edgecolor='black', alpha=0.7)
+
+    plt.title(name)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    path = args.ckpt_path + name + ".png"
+    plt.savefig(path, dpi=300, bbox_inches='tight')
+    print(f"Saved: ({name}) to {path}")
+    plt.close()

@@ -18,7 +18,6 @@ class ManifoldEmbedLayer:
         self.args = args
         if proj is not None:    # loading from checkpoint
             self.projection = proj
-            self.embed_dim = embed_dim
             return
 
         # TODO: combine inv_sqrt_cov and inner passes through the dataset (can share the sparse code computation)    
@@ -125,7 +124,10 @@ class ManifoldEmbedLayer:
         if self.projection.device != x.device:
             self.projection = self.projection.to(x.device)
         beta_flat = self.projection @ x
-        beta_flat /= (torch.linalg.vector_norm(beta_flat, dim=1).unsqueeze(1) + 1e-10)
+
+        n = torch.linalg.vector_norm(beta_flat, dim=0)
+        assert n.shape[0] != self.args.embed_dim
+        beta_flat /= (n + 1e-10)
         return beta_flat
 
 
