@@ -18,25 +18,46 @@ from matrix_utils import visualize_matrix, visualize_histogram
 
 import pdb
 
-def embed_vis(args, n_samples, labels, embed, prefix):
-    # stats on embedding cosine similarity --> embeddings already normalized
-    embed = embed.flatten(0, 1)
-    cos_sim = embed @ embed.T
-    assert cos_sim.max() < (1 + 1e-3), f"Cosine similarity < 1. Bug somewhere: {cos_sim.max()}"        
-    visualize_matrix(args, cos_sim, prefix + "embed_cos_sim")
-    visualize_matrix(args, torch.cov(embed.T), prefix + "embed_dim_cov")
+def off_diagonal(x):
+    n, m = x.shape
+    assert n == m
+    return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
-    # cosine sim to other patches in the same image (double counts due to cosine similarity symmetry and includes self-similarity)
+def embed_vis(args, n_samples, labels, embed, prefix, patch=True):
+    # stats on embedding cosine similarity --> embeddings already normalized
+    if patch:
+        embed = embed.flatten(0, 1)
+    cos_sim = embed @ embed.T
+    if patch:
+        assert cos_sim.max() < (1 + 1e-3), f"Cosine similarity < 1. Bug somewhere: {cos_sim.max()}"
+    visualize_matrix(args, cos_sim, prefix + "embed_cos_sim")
+    if patch:
+        visualize_matrix(args, torch.cov(embed.T), prefix + "embed_dim_cov")
+
+    # cosine sim to other patches in the same image (double counts due to cosine similarity symmetry)
     embed_hist = einops.rearrange(cos_sim, "(a b) (c d) -> a b c d", a=n_samples, c=n_samples)
-    intra_image_hist = embed_hist[torch.arange(n_samples), :, torch.arange(n_samples), :]
-    visualize_histogram(args, intra_image_hist.flatten(), prefix + "intra_image_sim")
+    if patch:
+        intra_image_hist = embed_hist[torch.arange(n_samples), :, torch.arange(n_samples), :]
+        
+        # remove self-similarity (diagonal elements)
+        out = []
+        for idx in range(intra_image_hist.shape[0]):
+            out.append(off_diagonal(intra_image_hist[idx]))
+        visualize_histogram(args, torch.concat(out), prefix + "intra_image_sim")
 
     # intra/inter class cosine similarity
     intra_class, inter_class = [], []
     for lab in torch.unique(labels):
         mask = labels == lab
-        intra_class.append(embed_hist[mask][:, :, mask].flatten())
+
+        # remove self-similarity (comparisons between patches from the same image)
+        intra = embed_hist[mask][:, :, mask]
+        for idx in range(intra.shape[0]):
+            for jdx in range(intra.shape[2]):
+                if idx != jdx:
+                    intra_class.append(intra[idx, :, jdx].flatten())
         inter_class.append(embed_hist[mask][:, :, ~mask].flatten())
+        
     visualize_histogram(args, torch.concat(intra_class), prefix + "intra_class_sim")
     visualize_histogram(args, torch.concat(inter_class), prefix + "inter_class_sim")
 
@@ -144,13 +165,20 @@ def main(a):
             smt = smt_layer(sc).cpu()
             embed[idx] = smt.T.unsqueeze(0)
             agg_embed[idx] = ImagePreprocessor.pool_single_image_patches(smt).flatten(1, -1).T
-            
+
             # stats on which dictionary elements are the most/least frequent
             n_patch_per_dict += sc.sum(dim=1).cpu()
         
         # generate visualizations for both patch and aggregated patch embeddings
-        embed_vis(args, n_samples, labels, embed, "")
+        # embed_vis(args, n_samples, labels, embed, "")
         embed_vis(args, n_samples, labels, agg_embed, "agg_")
+        
+        # convert aggregated embeddings to (normalized) image embeddings and visualize
+        agg_embed = torch.flatten(agg_embed, 1, -1)
+        norm = torch.linalg.norm(agg_embed, dim=1)
+        assert norm.shape[0] == agg_embed.shape[0] and len(norm.shape) == 1
+        agg_embed /= norm.unsqueeze(-1)
+        embed_vis(args, n_samples, labels, agg_embed, "img_", patch=False)
 
 
         # TODO: visualize some nearest neighbors in patch embedding space (within image, within class, within dataset)
