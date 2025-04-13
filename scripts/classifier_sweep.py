@@ -24,7 +24,18 @@ def main(a):
     args, sc_layer, _, whiten_op, unwhiten_op, U_full, inv_sqrt_cov = load_ckpt(a.path)
     dset = generate_dset(args, whiten_op=whiten_op, unwhiten_op=unwhiten_op)
     args.debug_vis = False    
-    args.full_dset_eval = True
+    if a.n_train <= 0:
+        args.full_dset_eval = True
+    else:
+        args.full_dset_eval = False
+        args.samples = a.n_train
+
+    k_val = a.classifier_k
+    k_temp = a.classifier_temp
+    if k_val is None:
+        k_val = [args.nnclass_k]
+    if k_temp is None:
+        k_temp = [args.knn_temp]
 
     # sweep through sizes and offsets for projection matrices
     results = {}
@@ -32,8 +43,13 @@ def main(a):
         for proj_dim in a.proj_dim:
             proj = U_full[offset : offset + proj_dim, :] @ inv_sqrt_cov
             smt_layer = ManifoldEmbedLayer(args, None, None, proj)
-            results[(offset, proj_dim)] = eval_knn_classifier(args, dset, sc_layer, smt_layer)
-            print(f"Test set accuracy ({offset}, {proj_dim}): {results[(offset, proj_dim)]}\n\n")
+            for k in k_val:
+                for temp in k_temp:
+                    # TODO: actually don't need to regenerate embeddings for each classifier setting
+                    args.nnclass_k = k
+                    args.knn_temp = temp
+                    results[(offset, proj_dim, k, temp)] = eval_knn_classifier(args, dset, sc_layer, smt_layer)
+                    print(f"Test set accuracy ({offset}, {proj_dim}): {results[(offset, proj_dim, k, temp)]}\n\n")
 
     # print results sorted from best to worst top-1 performance
     print("\n\n\nSORTED RESULTS:")
@@ -46,6 +62,9 @@ if __name__ == "__main__":
     parser.add_argument('--path', type=str, default="/home/astange/smt_ckpt")
     parser.add_argument('--proj_offsets', nargs='+', type=int, help="offsets into the projection matrix")
     parser.add_argument('--proj_dim', nargs='+', type=int, help="projection matrix dimensions to use")
+    parser.add_argument('--n_train', default=-1, type=int)
+    parser.add_argument('--classifier_k', nargs='+', type=int, help="value of k for k-NN")
+    parser.add_argument('--classifier_temp', nargs='+', type=float, help="exponential temp for k-NN (lower is sharper dist, higher is uniform)")
     
     with torch.no_grad():
         main(parser.parse_args())

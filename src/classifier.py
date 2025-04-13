@@ -10,26 +10,16 @@ import pdb
 
 class WeightedKNNClassifier():
     # Taken from sololearn Github repo
-    def __init__(self, k=20, T=0.07, max_distance_matrix_size=int(5e6), distance_fx="cosine", epsilon=0.00001, dist_sync_on_step=False):
+    def __init__(self, k=20, T=0.07):
         """Implements the weighted k-NN classifier used for evaluation.
         Args:
             k (int, optional): number of neighbors. Defaults to 20.
             T (float, optional): temperature for the exponential. Only used with cosine
                 distance. Defaults to 0.07.
-            max_distance_matrix_size (int, optional): maximum number of elements in the
-                distance matrix. Defaults to 5e6.
-            distance_fx (str, optional): Distance function. Accepted arguments: "cosine" or
-                "euclidean". Defaults to "cosine".
-            epsilon (float, optional): Small value for numerical stability. Only used with
-                euclidean distance. Defaults to 0.00001.
-            dist_sync_on_step (bool, optional): whether to sync distributed values at every
-                step. Defaults to False.
         """
         self.k = k
         self.T = T
-        self.max_distance_matrix_size = max_distance_matrix_size
-        self.distance_fx = distance_fx
-        self.epsilon = epsilon
+        self.output_probs = None
 
     @torch.no_grad()
     def compute(self, chunk_size, train_features, train_targets, test_features, test_targets):
@@ -41,15 +31,16 @@ class WeightedKNNClassifier():
         Returns:
             Tuple[float]: k-NN accuracy @1 and @5.
         """
-        if self.distance_fx == "cosine":
-            train_features = F.normalize(train_features)
-            test_features = F.normalize(test_features)
+        train_features = F.normalize(train_features)
+        test_features = F.normalize(test_features)
 
         num_classes = torch.unique(test_targets).numel()
         num_train_images = train_targets.size(0)
         num_test_images = test_targets.size(0)
         num_train_images = train_targets.size(0)
         k = min(self.k, num_train_images)
+        
+        self.output_probs = torch.zeros((test_features.shape[0], num_classes))
 
         top1, top5, total = 0.0, 0.0, 0
         retrieval_one_hot = torch.zeros(k, num_classes).to(train_features.device)
@@ -68,17 +59,14 @@ class WeightedKNNClassifier():
                 features = features.to("cuda", non_blocking=True)
 
             # calculate the dot product and compute top-k neighbors
-            if self.distance_fx == "cosine":
-                mm_chnk = 250
-                similarities = torch.zeros(size=(features.shape[0], train_features.shape[1]), dtype=features.dtype, device=features.device)
-                for start in range(0, train_features.shape[1], mm_chnk):
-                    end = min(start+mm_chnk, train_features.shape[1])
-                    tf = train_features[:, start:end]
-                    if torch.cuda.is_available():
-                        tf = tf.to("cuda", non_blocking=True)   
-                    similarities[:, start:end] = torch.mm(features, tf)
-            else:
-                raise NotImplementedError
+            mm_chnk = 250
+            similarities = torch.zeros(size=(features.shape[0], train_features.shape[1]), dtype=features.dtype, device=features.device)
+            for start in range(0, train_features.shape[1], mm_chnk):
+                end = min(start+mm_chnk, train_features.shape[1])
+                tf = train_features[:, start:end]
+                if torch.cuda.is_available():
+                    tf = tf.to("cuda", non_blocking=True)   
+                similarities[:, start:end] = torch.mm(features, tf)
 
             similarities, indices = similarities.topk(k, largest=True, sorted=True)
             indices = indices.cpu()
@@ -91,15 +79,20 @@ class WeightedKNNClassifier():
             retrieval_one_hot.resize_(batch_size * k, num_classes).zero_()
             retrieval_one_hot.scatter_(1, retrieved_neighbors.view(-1, 1), 1)
 
-            if self.distance_fx == "cosine":
-                similarities = similarities.clone().div_(self.T).exp_()
+            similarities = similarities.clone().div_(self.T).exp_()
 
             probs = torch.sum(torch.mul(retrieval_one_hot.view(batch_size, -1, num_classes), similarities.view(batch_size, -1, 1)), 1)
             _, predictions = probs.sort(1, True)
             predictions = predictions.cpu()
-
+            
             # find the predictions that match the target
             correct = predictions.eq(targets.data.view(-1, 1))
+
+            # probs /= torch.sum(probs, dim=1, keepdim=True)
+            # predicted_prob = probs[predictions[:, 0]]
+            # correct_prob = probs[torch.arange(probs.shape[0]), targets.data.view(-1, 1)[:, 0].to(torch.int64)]
+            # pdb.set_trace()
+
             top1 = top1 + correct.narrow(1, 0, 1).sum().item()
             top5 = (top5 + correct.narrow(1, 0, min(5, k, correct.size(-1))).sum().item())  # top5 does not make sense if k < 5
             total += targets.size(0)
