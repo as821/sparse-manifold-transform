@@ -310,14 +310,19 @@ class ImagePreprocessor():
             out[start:end] = chnk.cpu()
         return torch.flatten(out, 1, -1)
 
-    def generate_embeddings(self, n_samples, sc_layer, smt_layer, stride=1, cuda=False):
+    def generate_embeddings(self, n_samples, sc_layer, smt_layer, stride=1, cuda=False, train_img=False):
         """Apply calculated SMT to this dataset. NOTE: uses full dataset regardless of args"""
         if n_samples <= 0:
             n_samples = len(self.dataset)
+        if train_img:
+            n_samples *= 2      # account for horizontal flip
         embed = []
         labels = torch.zeros((n_samples), device="cpu")
         for idx in tqdm(range(n_samples)):
-            patches, label = self.get_single_eval_image(idx, stride, cuda)
+            if train_img:
+                patches, label = self.get_single_train_image(idx, stride, cuda)
+            else:
+                patches, label = self.get_single_eval_image(idx, stride, cuda)
             embed.append(smt_layer(sc_layer(patches)).T.cpu().unsqueeze(0))
             labels[idx] = label
         return torch.concat(embed, dim=0), labels

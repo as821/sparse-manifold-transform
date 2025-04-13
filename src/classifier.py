@@ -114,9 +114,9 @@ class WeightedKNNClassifier():
 def eval_knn_classifier(args, train_set, sc_layer, smt_layer):
     print("Test set evaluation.", flush=True)
 
-    # generate train set embeddings + labels
+    # generate train set embeddings + labels (include horizontal flip)
     train_samples = -1 if args.full_dset_eval else args.samples
-    train_embed, train_labels = train_set.generate_embeddings(train_samples, sc_layer, smt_layer, cuda=True)
+    train_embed, train_labels = train_set.generate_embeddings(train_samples, sc_layer, smt_layer, cuda=True, train_img=True)
     train_embed = rearrange(train_embed, "a (b c) d -> a b c d", b=train_set.n_patch_per_dim)
     train_embed = ImagePreprocessor.aggregate_image_embed(train_embed)
 
