@@ -82,11 +82,13 @@ def load_ckpt(path):
     basis = torch.load(path + "sc_basis.pt")
     sc_layer = SparseCodeLayer(basis.shape[1], basis, args.gq_thresh)
     smt_layer = ManifoldEmbedLayer(args, None, None, torch.from_numpy(np.load(path + "smt_proj.npy")))
-    
+    U_full = torch.from_numpy(np.load(path + "smt_U_full.npy"))
+    inv_sqrt_cov = torch.from_numpy(np.load(path + "smt_inv_sqrt_cov.npy"))
+
     whiten_op = torch.load(path + "whiten_op.pt")
     unwhiten_op = torch.load(path + "unwhiten_op.pt")
     
-    return args, sc_layer, smt_layer, whiten_op, unwhiten_op
+    return args, sc_layer, smt_layer, whiten_op, unwhiten_op, U_full, inv_sqrt_cov
 
 def get_ckpt_path(ckpt_path):
     if not os.path.exists(ckpt_path):
@@ -106,12 +108,14 @@ def get_ckpt_path(ckpt_path):
 def save_ckpt(path, args, sc_layer, smt_layer, dset):
     # generate directory for checkpoint
     assert os.path.exists(path)
-    print("Saving checkpoint...", flush=True)
+    print(f"Saving checkpoint... ({path})", flush=True)
 
     # save dictionary, embedding matrix, + a copy of the arguments
     torch.save(sc_layer.basis, path + "sc_basis.pt")
     np.save(path + "smt_proj.npy", smt_layer.projection)
-    np.save(path + "smt_proj_full.npy", smt_layer.projection_full)
+    np.save(path + "smt_U_full.npy", smt_layer.U_full)
+    np.save(path + "smt_inv_sqrt_cov.npy", smt_layer.inv_sqrt_cov)
+    
     with open(path + "args.json", "w") as file:
         json.dump(vars(args), file, indent=4)
 

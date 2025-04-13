@@ -104,7 +104,9 @@ class ManifoldEmbedLayer:
         assert indices.shape[0] == self.args.embed_dim
         evals = evals[indices]       
         U = torch.from_numpy(evecs[:, indices].transpose())
-        U_full = torch.from_numpy(evecs.transpose())
+        
+        self.U_full = torch.from_numpy(evecs.transpose()).to(torch.float32).numpy()
+        self.inv_sqrt_cov = inv_sqrt_cov.cpu().to(torch.float32).numpy()
 
         # Discrepancy between (1) and (2) on ordering of U and inv_sqrt_cov here, 
         # this way from (2) makes the shapes work out + makes sense intuitively. First, apply whitening
@@ -113,10 +115,7 @@ class ManifoldEmbedLayer:
         self.projection = U @ inv_sqrt_cov.cpu()
         assert self.projection.shape[0] == self.args.embed_dim 
         assert not torch.any(torch.isnan(self.projection))
-        self.projection_full = U_full @ inv_sqrt_cov.cpu()
-
         self.projection = self.projection.to(torch.float32)
-        self.projection_full = self.projection_full.to(torch.float32)
 
     @torch.compiler.disable
     def __call__(self, x):

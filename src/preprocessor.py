@@ -314,13 +314,13 @@ class ImagePreprocessor():
         """Apply calculated SMT to this dataset. NOTE: uses full dataset regardless of args"""
         if n_samples <= 0:
             n_samples = len(self.dataset)
-        embed = torch.zeros((n_samples, self.n_patch_per_img, self.args.embed_dim), device="cpu")
+        embed = []
         labels = torch.zeros((n_samples), device="cpu")
         for idx in tqdm(range(n_samples)):
             patches, label = self.get_single_eval_image(idx, stride, cuda)
-            embed[idx, :] = smt_layer(sc_layer(patches)).T.cpu()
+            embed.append(smt_layer(sc_layer(patches)).T.cpu().unsqueeze(0))
             labels[idx] = label
-        return embed, labels
+        return torch.concat(embed, dim=0), labels
 
 def _context(x, y, n_patches, context_sz):
     """Given the index of a patch in the image, return the indices of its neighbors (context). DOES NOT include the given index."""

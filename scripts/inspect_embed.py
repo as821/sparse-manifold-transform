@@ -62,7 +62,7 @@ def embed_vis(args, n_samples, labels, embed, prefix, patch=True):
     visualize_histogram(args, torch.concat(inter_class), prefix + "inter_class_sim")
 
 def main(a):
-    args, sc_layer, smt_layer, whiten_op, unwhiten_op = load_ckpt(a.path)
+    args, sc_layer, smt_layer, whiten_op, unwhiten_op, _, _ = load_ckpt(a.path)
     
     args.debug_vis = a.debug_vis
     
