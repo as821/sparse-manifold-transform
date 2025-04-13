@@ -31,8 +31,6 @@ class SparseCodeLayer:
             self.basis = self.basis.to(data.device, non_blocking=True)
         cosine_sim = self.basis.T @ data
 
-        # TODO: do we still want to keep zero code handling?
-
         mask = cosine_sim >= self.gq_thresh
         cosine_sim[mask] = 1
         mask = ~mask

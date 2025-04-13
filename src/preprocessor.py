@@ -316,16 +316,19 @@ class ImagePreprocessor():
             n_samples = len(self.dataset)
         if train_img:
             n_samples *= 2      # account for horizontal flip
-        embed = []
+        
+        sz = smt_layer(sc_layer(self.get_single_train_image(0, stride, False)[0])).T.cpu().shape
+        assert len(sz) == 2
+
+        embed = torch.zeros((n_samples, sz[0], sz[1]))
         labels = torch.zeros((n_samples), device="cpu")
         for idx in tqdm(range(n_samples)):
             if train_img:
-                patches, label = self.get_single_train_image(idx, stride, cuda)
+                patches, labels[idx] = self.get_single_train_image(idx, stride, cuda)
             else:
-                patches, label = self.get_single_eval_image(idx, stride, cuda)
-            embed.append(smt_layer(sc_layer(patches)).T.cpu().unsqueeze(0))
-            labels[idx] = label
-        return torch.concat(embed, dim=0), labels
+                patches, labels[idx] = self.get_single_eval_image(idx, stride, cuda)
+            embed[idx] = smt_layer(sc_layer(patches)).T.cpu()
+        return embed, labels
 
 def _context(x, y, n_patches, context_sz):
     """Given the index of a patch in the image, return the indices of its neighbors (context). DOES NOT include the given index."""
