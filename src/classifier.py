@@ -45,20 +45,18 @@ class WeightedKNNClassifier():
         pool = torch.nn.AvgPool2d(kernel_size=4, stride=2).to("cuda", non_blocking=True)
         for start in tqdm(range(0, num_train_images, mm_chnk)):
             end = min(start+mm_chnk, num_train_images)
-            tf = []
+            tf = torch.zeros(end - start, test_features.shape[1], device="cuda")
             for idx in range(start, end):
                 embed, train_targets[idx] = train_set.generate_single_image_embedding(idx, sc_layer, smt_layer, cuda=True, train_img=True)
                 
-                # embed = ImagePreprocessor.pool_single_image_patches(embed.T).flatten()
                 # ImagePreprocessor.pool_single_image_patches, but without transfers
                 sz = int(math.sqrt(embed.shape[0]))
                 assert sz ** 2 == embed.shape[0]
-                embed = rearrange(embed, "(b c) a -> a b c", b=sz)
-                embed = pool(embed)
+                embed = pool(rearrange(embed, "(b c) a -> a b c", b=sz))
                 embed /= (torch.linalg.vector_norm(embed, ord=2, dim=0, keepdim=True) + 1e-20)
                 embed = embed.flatten()
-                tf.append(F.normalize(embed.unsqueeze(0)))
-            similarities[:, start:end] = torch.mm(test_features, torch.concat(tf).T)
+                tf[idx - start] = F.normalize(embed, dim=0)
+            similarities[:, start:end] = torch.mm(test_features, tf.T)
 
         # calculate k-NN from cosine similarities
         top1, top5, total = 0.0, 0.0, 0
