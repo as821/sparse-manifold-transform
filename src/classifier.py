@@ -1,4 +1,5 @@
 import torch
+import math
 from tqdm import tqdm
 import torch.nn.functional as F
 from einops import rearrange
@@ -19,10 +20,9 @@ class WeightedKNNClassifier():
         """
         self.k = k
         self.T = T
-        self.output_probs = None
 
     @torch.no_grad()
-    def compute(self, chunk_size, train_features, train_targets, test_features, test_targets):
+    def compute(self, chunk_size, train_set, sc_layer, smt_layer, num_train_images, test_features, test_targets):
         """Computes weighted k-NN accuracy @1 and @5. If cosine distance is selected,
         the weight is computed using the exponential of the temperature scaled cosine
         distance of the samples. If euclidean distance is selected, the weight corresponds
@@ -31,57 +31,56 @@ class WeightedKNNClassifier():
         Returns:
             Tuple[float]: k-NN accuracy @1 and @5.
         """
-        train_features = F.normalize(train_features)
-        test_features = F.normalize(test_features)
+        # train_features = F.normalize(train_features)
+        test_features = F.normalize(test_features).to("cuda")
 
         num_classes = torch.unique(test_targets).numel()
-        num_train_images = train_targets.size(0)
         num_test_images = test_targets.size(0)
-        num_train_images = train_targets.size(0)
         k = min(self.k, num_train_images)
         
-        self.output_probs = torch.zeros((test_features.shape[0], num_classes))
+        # calculate train set features then calculate the dot product and compute top-k neighbors
+        mm_chnk = 250
+        similarities = torch.zeros(size=(test_features.shape[0], num_train_images), dtype=test_features.dtype, device="cuda")
+        train_targets = torch.zeros(size=(num_train_images,))
+        pool = torch.nn.AvgPool2d(kernel_size=4, stride=2).to("cuda", non_blocking=True)
+        for start in tqdm(range(0, num_train_images, mm_chnk)):
+            end = min(start+mm_chnk, num_train_images)
+            tf = []
+            for idx in range(start, end):
+                embed, train_targets[idx] = train_set.generate_single_image_embedding(idx, sc_layer, smt_layer, cuda=True, train_img=True)
+                
+                # embed = ImagePreprocessor.pool_single_image_patches(embed.T).flatten()
+                # ImagePreprocessor.pool_single_image_patches, but without transfers
+                sz = int(math.sqrt(embed.shape[0]))
+                assert sz ** 2 == embed.shape[0]
+                embed = rearrange(embed, "(b c) a -> a b c", b=sz)
+                embed = pool(embed)
+                embed /= (torch.linalg.vector_norm(embed, ord=2, dim=0, keepdim=True) + 1e-20)
+                embed = embed.flatten()
+                tf.append(F.normalize(embed.unsqueeze(0)))
+            similarities[:, start:end] = torch.mm(test_features, torch.concat(tf).T)
 
+        # calculate k-NN from cosine similarities
         top1, top5, total = 0.0, 0.0, 0
-        retrieval_one_hot = torch.zeros(k, num_classes).to(train_features.device)
-
-        if(torch.cuda.is_available()):
-            retrieval_one_hot = retrieval_one_hot.to("cuda", non_blocking=True)
-
-        train_features = train_features.T
+        retrieval_one_hot = torch.zeros(k, num_classes, device="cuda")
         for idx in tqdm(range(0, num_test_images, chunk_size)):
-            # get the features for test images
-            features = test_features[idx : min((idx + chunk_size), num_test_images), :]
             targets = test_targets[idx : min((idx + chunk_size), num_test_images)]
-            batch_size = targets.size(0)
-
-            if torch.cuda.is_available():
-                features = features.to("cuda", non_blocking=True)
-
-            # calculate the dot product and compute top-k neighbors
-            mm_chnk = 250
-            similarities = torch.zeros(size=(features.shape[0], train_features.shape[1]), dtype=features.dtype, device=features.device)
-            for start in range(0, train_features.shape[1], mm_chnk):
-                end = min(start+mm_chnk, train_features.shape[1])
-                tf = train_features[:, start:end]
-                if torch.cuda.is_available():
-                    tf = tf.to("cuda", non_blocking=True)   
-                similarities[:, start:end] = torch.mm(features, tf)
-
-            similarities, indices = similarities.topk(k, largest=True, sorted=True)
+            sim = similarities[idx : min(idx + chunk_size, num_test_images)]
+            
+            sim, indices = sim.topk(k, largest=True, sorted=True)
             indices = indices.cpu()
-            candidates = train_targets.view(1, -1).expand(batch_size, -1)
+            candidates = train_targets.view(1, -1).expand(chunk_size, -1)
             retrieved_neighbors = torch.gather(candidates, 1, indices).type(torch.int64)
 
             if torch.cuda.is_available():
                 retrieved_neighbors = retrieved_neighbors.to('cuda', non_blocking=True)
 
-            retrieval_one_hot.resize_(batch_size * k, num_classes).zero_()
+            retrieval_one_hot.resize_(chunk_size * k, num_classes).zero_()
             retrieval_one_hot.scatter_(1, retrieved_neighbors.view(-1, 1), 1)
 
-            similarities = similarities.clone().div_(self.T).exp_()
+            sim = sim.clone().div_(self.T).exp_()
 
-            probs = torch.sum(torch.mul(retrieval_one_hot.view(batch_size, -1, num_classes), similarities.view(batch_size, -1, 1)), 1)
+            probs = torch.sum(torch.mul(retrieval_one_hot.view(chunk_size, -1, num_classes), sim.view(chunk_size, -1, 1)), 1)
             _, predictions = probs.sort(1, True)
             predictions = predictions.cpu()
             
@@ -103,15 +102,16 @@ class WeightedKNNClassifier():
 
 
 
-
 def eval_knn_classifier(args, train_set, sc_layer, smt_layer):
     print("Test set evaluation.", flush=True)
 
     # generate train set embeddings + labels (include horizontal flip)
-    train_samples = -1 if args.full_dset_eval else args.samples
-    train_embed, train_labels = train_set.generate_embeddings(train_samples, sc_layer, smt_layer, cuda=True, train_img=True)
-    train_embed = rearrange(train_embed, "a (b c) d -> a b c d", b=train_set.n_patch_per_dim)
-    train_embed = ImagePreprocessor.aggregate_image_embed(train_embed)
+    train_samples = len(train_set.dataset) if args.full_dset_eval else args.samples
+    train_samples *= 2
+
+    # train_embed, train_labels = train_set.generate_embeddings(train_samples, sc_layer, smt_layer, cuda=True, train_img=True)
+    # train_embed = rearrange(train_embed, "a (b c) d -> a b c d", b=train_set.n_patch_per_dim)
+    # train_embed = ImagePreprocessor.aggregate_image_embed(train_embed)
 
     # generate test set embeddings and labels
     test_set = generate_dset(args, 'test', train_set)
@@ -121,4 +121,4 @@ def eval_knn_classifier(args, train_set, sc_layer, smt_layer):
 
     # Apply k-NN classifier to test set embeddings
     classifier = WeightedKNNClassifier(k=args.nnclass_k, T=args.knn_temp)
-    return classifier.compute(args.classify_chunk, train_embed, train_labels, test_embed, test_label)
+    return classifier.compute(args.classify_chunk, train_set, sc_layer, smt_layer, train_samples, test_embed, test_label)

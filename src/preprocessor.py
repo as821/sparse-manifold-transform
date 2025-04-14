@@ -330,6 +330,13 @@ class ImagePreprocessor():
             embed[idx] = smt_layer(sc_layer(patches)).T.cpu()
         return embed, labels
 
+    def generate_single_image_embedding(self, idx, sc_layer, smt_layer, stride=1, cuda=False, train_img=False):
+        if train_img:
+            patches, labels = self.get_single_train_image(idx, stride, cuda)
+        else:
+            patches, labels = self.get_single_eval_image(idx, stride, cuda)
+        return smt_layer(sc_layer(patches)).T, labels
+
 def _context(x, y, n_patches, context_sz):
     """Given the index of a patch in the image, return the indices of its neighbors (context). DOES NOT include the given index."""
     assert x < n_patches and y < n_patches
