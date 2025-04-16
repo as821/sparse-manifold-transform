@@ -20,6 +20,10 @@ class WeightedKNNClassifier():
         """
         self.k = k
         self.T = T
+        
+        self.store_debug = False
+        self.neighbor_indices = []
+        self.neighbor_weighted_sim = []
 
     @torch.no_grad()
     def compute(self, chunk_size, train_set, sc_layer, smt_layer, num_train_images, test_features, test_targets):
@@ -62,23 +66,28 @@ class WeightedKNNClassifier():
         top1, top5, total = 0.0, 0.0, 0
         retrieval_one_hot = torch.zeros(k, num_classes, device="cuda")
         for idx in tqdm(range(0, num_test_images, chunk_size)):
+            step_sz = min((idx + chunk_size), num_test_images) - idx
             targets = test_targets[idx : min((idx + chunk_size), num_test_images)]
             sim = similarities[idx : min(idx + chunk_size, num_test_images)]
             
             sim, indices = sim.topk(k, largest=True, sorted=True)
             indices = indices.cpu()
-            candidates = train_targets.view(1, -1).expand(chunk_size, -1)
+            candidates = train_targets.view(1, -1).expand(step_sz, -1)
             retrieved_neighbors = torch.gather(candidates, 1, indices).type(torch.int64)
 
             if torch.cuda.is_available():
                 retrieved_neighbors = retrieved_neighbors.to('cuda', non_blocking=True)
 
-            retrieval_one_hot.resize_(chunk_size * k, num_classes).zero_()
+            retrieval_one_hot.resize_(step_sz * k, num_classes).zero_()
             retrieval_one_hot.scatter_(1, retrieved_neighbors.view(-1, 1), 1)
 
             sim = sim.clone().div_(self.T).exp_()
 
-            probs = torch.sum(torch.mul(retrieval_one_hot.view(chunk_size, -1, num_classes), sim.view(chunk_size, -1, 1)), 1)
+            if self.store_debug:
+                self.neighbor_indices.append(indices)
+                self.neighbor_weighted_sim.append(sim.cpu())
+
+            probs = torch.sum(torch.mul(retrieval_one_hot.view(step_sz, -1, num_classes), sim.view(step_sz, -1, 1)), 1)
             _, predictions = probs.sort(1, True)
             predictions = predictions.cpu()
             

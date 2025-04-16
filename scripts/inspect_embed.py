@@ -4,6 +4,8 @@ import numpy as np
 import torch
 import math
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import torchvision
 
 import sys
 import os
@@ -11,12 +13,61 @@ sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 
+from classifier import WeightedKNNClassifier
 from util import load_ckpt, get_ckpt_path
 from preprocessor import generate_dset, ImagePreprocessor
 from matrix_utils import visualize_matrix, visualize_histogram
 
 
 import pdb
+
+def visualize_classifier_knn(a, args, dset, n_samples, sc_layer, smt_layer, whiten_op, unwhiten_op):
+    test_embed, test_label = dset.generate_embeddings(n_samples, sc_layer, smt_layer, cuda=True)
+    test_embed = einops.rearrange(test_embed, "a (b c) d -> a b c d", b=dset.n_patch_per_dim)
+    test_embed = ImagePreprocessor.aggregate_image_embed(test_embed)
+
+    classifier = WeightedKNNClassifier(k=args.nnclass_k, T=args.knn_temp)
+    classifier.store_debug = True
+    
+    train_set = dset
+    if a.test_set:
+        train_set = ImagePreprocessor(args, torchvision.datasets.CIFAR10, split="train", whiten_op=whiten_op, unwhiten_op=unwhiten_op)
+    
+    train_samples = len(train_set.dataset) if args.full_dset_eval else args.samples
+    train_samples *= 2
+    classifier.compute(args.classify_chunk, train_set, sc_layer, smt_layer, train_samples, test_embed, test_label)
+
+    neighbor_indices = torch.concat(classifier.neighbor_indices, dim=0)
+    neighbor_weights = torch.concat(classifier.neighbor_weighted_sim, dim=0)
+    
+    # visualize all neighbors of the first 5
+    n_to_vis = 10
+    fig, axes = plt.subplots(n_to_vis, args.nnclass_k + 1, figsize=(15, 30))
+
+    for i in range(n_to_vis):
+        # visualize primary image
+        img, _ = dset.dataset[i]
+        img = img.permute((1, 2, 0))
+        axes[i, 0].imshow(img)
+        axes[i, 0].axis('off')
+
+        # visualize neighbors
+        for j in range(args.nnclass_k):
+            idx = neighbor_indices[i, j].item()
+            img, _ = train_set.train_set_image(idx)  # possibly a horizontally flipped image
+            img = img.permute((1, 2, 0))
+            axes[i, j + 1].imshow(img)
+            axes[i, j + 1].axis('off')
+            
+            if j != 0 or a.test_set:
+                axes[i, j + 1].set_title(f"N{j+1} ({neighbor_weights[i, j]:0.2f})", fontsize=3)
+    
+    plt.tight_layout()
+    path = args.ckpt_path + "classifier_knn.png"
+    plt.savefig(path, dpi=300, bbox_inches='tight')
+    print(f"Saved: classifier_knn to {path}")
+    plt.close()
+
 
 def off_diagonal(x):
     n, m = x.shape
@@ -181,8 +232,8 @@ def main(a):
         embed_vis(args, n_samples, labels, agg_embed, "img_", patch=False)
 
 
-        # TODO: visualize some nearest neighbors in patch embedding space (within image, within class, within dataset)
-
+        # collect k nearest neighbors (from the train set) in image embedding space
+        visualize_classifier_knn(a, args, dset, n_samples, sc_layer, smt_layer, whiten_op, unwhiten_op)
 
 
 
