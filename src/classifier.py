@@ -24,6 +24,7 @@ class WeightedKNNClassifier():
         self.store_debug = False
         self.neighbor_indices = []
         self.neighbor_weighted_sim = []
+        self.pred = []
 
     @torch.no_grad()
     def compute(self, chunk_size, train_set, sc_layer, smt_layer, num_train_images, test_features, test_targets):
@@ -83,13 +84,15 @@ class WeightedKNNClassifier():
 
             sim = sim.clone().div_(self.T).exp_()
 
-            if self.store_debug:
-                self.neighbor_indices.append(indices)
-                self.neighbor_weighted_sim.append(sim.cpu())
 
             probs = torch.sum(torch.mul(retrieval_one_hot.view(step_sz, -1, num_classes), sim.view(step_sz, -1, 1)), 1)
             _, predictions = probs.sort(1, True)
             predictions = predictions.cpu()
+            
+            if self.store_debug:
+                self.neighbor_indices.append(indices)
+                self.neighbor_weighted_sim.append(sim.cpu())
+                self.pred.append(predictions)
             
             # find the predictions that match the target
             correct = predictions.eq(targets.data.view(-1, 1))

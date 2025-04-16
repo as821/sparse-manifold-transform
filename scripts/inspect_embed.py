@@ -39,6 +39,7 @@ def visualize_classifier_knn(a, args, dset, n_samples, sc_layer, smt_layer, whit
 
     neighbor_indices = torch.concat(classifier.neighbor_indices, dim=0)
     neighbor_weights = torch.concat(classifier.neighbor_weighted_sim, dim=0)
+    prediction = torch.concat(classifier.pred, dim=0)
     
     # visualize all neighbors of the first 5
     n_to_vis = 10
@@ -46,21 +47,22 @@ def visualize_classifier_knn(a, args, dset, n_samples, sc_layer, smt_layer, whit
 
     for i in range(n_to_vis):
         # visualize primary image
-        img, _ = dset.dataset[i]
+        img, label = dset.dataset[i]
         img = img.permute((1, 2, 0))
         axes[i, 0].imshow(img)
         axes[i, 0].axis('off')
+        axes[i, 0].set_title(f"class {int(label)} (pred: {prediction[i][:5].tolist()})", fontsize=3)
 
         # visualize neighbors
         for j in range(args.nnclass_k):
             idx = neighbor_indices[i, j].item()
-            img, _ = train_set.train_set_image(idx)  # possibly a horizontally flipped image
+            img, label = train_set.train_set_image(idx)  # possibly a horizontally flipped image
             img = img.permute((1, 2, 0))
             axes[i, j + 1].imshow(img)
             axes[i, j + 1].axis('off')
             
             if j != 0 or a.test_set:
-                axes[i, j + 1].set_title(f"N{j+1} ({neighbor_weights[i, j]:0.2f})", fontsize=3)
+                axes[i, j + 1].set_title(f"N{j+1} ({neighbor_weights[i, j]:0.2f}, {int(label)})", fontsize=3)
     
     plt.tight_layout()
     path = args.ckpt_path + "classifier_knn.png"
