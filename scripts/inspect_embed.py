@@ -35,7 +35,8 @@ def visualize_classifier_knn(a, args, dset, n_samples, sc_layer, smt_layer, whit
     
     train_samples = len(train_set.dataset) if args.full_dset_eval else args.samples
     train_samples *= 2
-    classifier.compute(args.classify_chunk, train_set, sc_layer, smt_layer, train_samples, test_embed, test_label)
+    top1, top5 = classifier.compute(args.classify_chunk, train_set, sc_layer, smt_layer, train_samples, test_embed, test_label)
+    print(f"k-NN: ({top1}, {top5})")
 
     neighbor_indices = torch.concat(classifier.neighbor_indices, dim=0)
     neighbor_weights = torch.concat(classifier.neighbor_weighted_sim, dim=0)
@@ -232,7 +233,6 @@ def main(a):
         assert norm.shape[0] == agg_embed.shape[0] and len(norm.shape) == 1
         agg_embed /= norm.unsqueeze(-1)
         embed_vis(args, n_samples, labels, agg_embed, "img_", patch=False)
-
 
         # collect k nearest neighbors (from the train set) in image embedding space
         visualize_classifier_knn(a, args, dset, n_samples, sc_layer, smt_layer, whiten_op, unwhiten_op)
