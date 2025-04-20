@@ -17,7 +17,6 @@ import time
 
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
-sys.path.append(os.path.join(os.getcwd(), 'src/c'))
 
 from util import generate_argparser, validate_args, save_ckpt, get_ckpt_path
 from classifier import eval_knn_classifier
@@ -40,7 +39,8 @@ def main(args):
 
     # generate dictionary
     print("Generating dictionary")
-    sc_layer = SparseCodeLayer(args.dict_sz, generate_dict(args, dset, args.dict_sz, args.dict_thresh), args.gq_thresh)
+    sc_layer = SparseCodeLayer(args.dict_sz, args.gq_thresh)
+    sc_layer.generate_dict(args, dset, args.dict_thresh)
 
     # calculate embeddings
     smt_layer = ManifoldEmbedLayer(args, dset, sc_layer)

@@ -14,7 +14,7 @@ import json
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
-from sparse_code import SparseCodeLayer, generate_dict
+from sparse_code import SparseCodeLayer
 from manifold_embedding import ManifoldEmbedLayer
 
 
