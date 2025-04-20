@@ -4,6 +4,7 @@ import torchvision
 import torchvision.transforms as transforms
 import wandb
 import argparse
+import einops
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
@@ -34,6 +35,34 @@ def feature_density_plot(args, loss_dict, vis_dict, prefix="test_"):
 
     return vis_dict
 
+
+def visualize_dictionary(args, vis_dict, model, n_vis=100):
+    foo = model.W_dec.data.cpu()  # shape: (a, b * c * d)
+    foo = einops.rearrange(foo, "a (b c d) -> a b c d", b=3, c=args.patch_sz)
+
+    # normalize using max/min dictionary values
+    img_min = foo.amin(dim=(0, 2, 3), keepdim=True)
+    img_max = foo.amax(dim=(0, 2, 3), keepdim=True)
+    normalized = (foo - img_min) / (img_max - img_min + 1e-8)
+
+    n_vis = min(n_vis, normalized.shape[0])
+
+    upscale_factor = 20
+    resized = torch.nn.functional.interpolate(normalized[:n_vis], scale_factor=upscale_factor, mode='nearest')
+
+    fig, axes = plt.subplots(1, n_vis, figsize=(n_vis * 2, 3))
+    if n_vis == 1:
+        axes = [axes]
+    for i in range(n_vis):
+        img = resized[i].permute(1, 2, 0).numpy()  # CHW -> HWC
+        axes[i].imshow(img)
+        axes[i].axis('off')
+
+    plt.tight_layout()
+    vis_dict["dict"] = wandb.Image(plt)
+    plt.close()
+
+    return vis_dict
 
 class PatchDataset(Dataset):
     def __init__(self, dset, patch_sz, stride=1):
@@ -74,6 +103,8 @@ def run_epoch(args, model, loader, optimizer, epoch):
             with torch.no_grad():
                 total_num += data.size(0)
                 total_loss += loss.item() * data.size(0)
+                total_recon += recon_loss.item() * data.size(0)
+                total_l1 += l1_loss.item() * data.size(0)
 
                 # TODO: add a bunch of tracking for dead neurons + representation sparsity
                 if not is_train:
@@ -124,7 +155,11 @@ def train(args):
             vis_dict["test_loss"] = test_loss_dict["loss"]
             vis_dict["test_recon"] = test_loss_dict["recon_loss"]
             vis_dict["test_l1"] = test_loss_dict["l1_loss"]
+
             vis_dict = feature_density_plot(args, test_loss_dict, vis_dict)
+            vis_dict = visualize_dictionary(args, vis_dict, model)
+
+            # TODO: visualize reconstructions...
 
             wandb.log(vis_dict, step=epoch)
 
