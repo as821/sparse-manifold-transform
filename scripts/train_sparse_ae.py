@@ -64,6 +64,44 @@ def visualize_dictionary(args, vis_dict, model, n_vis=100):
 
     return vis_dict
 
+
+def visualize_recon(args, vis_dict, model, loader, n_vis=100, prefix=""):
+    # generate from a single batch
+    x = next(iter(loader)).cuda(non_blocking=True).flatten(0, 1)
+    x = x[torch.randperm(x.shape[0])]       # randomize patches so not all are from a single image
+    x_recon, _ = model(x)
+    
+    x = einops.rearrange(x, "a (b c d) -> a b c d", b=3, c=args.patch_sz).cpu().detach()
+    x_recon = einops.rearrange(x_recon, "a (b c d) -> a b c d", b=3, c=args.patch_sz).cpu().detach()
+    n_vis = min(n_vis, x.shape[0])
+
+    # 0-1 normalize reconstrution (original should already be in range)
+    img_min = x_recon.amin(dim=(0, 2, 3), keepdim=True)
+    img_max = x_recon.amax(dim=(0, 2, 3), keepdim=True)
+    x_recon = (x_recon - img_min) / (img_max - img_min + 1e-8)
+
+
+    upscale_factor = 20
+    resized_x = torch.nn.functional.interpolate(x[:n_vis], scale_factor=upscale_factor, mode='nearest')
+    resized_x_recon = torch.nn.functional.interpolate(x_recon[:n_vis], scale_factor=upscale_factor, mode='nearest')
+
+    fig, axes = plt.subplots(2, n_vis, figsize=(n_vis * 2, 3))
+    for i in range(n_vis):
+        axes[0, i].imshow(resized_x[i].permute(1, 2, 0).numpy())
+        axes[0, i].axis('off')
+        axes[1, i].imshow(resized_x_recon[i].permute(1, 2, 0).numpy())
+        axes[1, i].axis('off')
+
+    fig.text(0.01, 0.75, 'Original', va='center', ha='left', fontsize=12)
+    fig.text(0.01, 0.25, 'Reconstructed', va='center', ha='left', fontsize=12)
+    plt.tight_layout(rect=[0.03, 0, 1, 1])  # leave space for labels on the left
+    
+    vis_dict[prefix + "recon"] = wandb.Image(plt)
+    plt.close()
+
+    return vis_dict
+
+
 class PatchDataset(Dataset):
     def __init__(self, dset, patch_sz, stride=1):
         self.dset = dset
@@ -156,10 +194,15 @@ def train(args):
             vis_dict["test_recon"] = test_loss_dict["recon_loss"]
             vis_dict["test_l1"] = test_loss_dict["l1_loss"]
 
-            vis_dict = feature_density_plot(args, test_loss_dict, vis_dict)
-            vis_dict = visualize_dictionary(args, vis_dict, model)
+            with torch.no_grad():
+                model = model.eval()
+                vis_dict = feature_density_plot(args, test_loss_dict, vis_dict)
+                vis_dict = visualize_dictionary(args, vis_dict, model)
 
-            # TODO: visualize reconstructions...
+                vis_dict = visualize_recon(args, vis_dict, model, train_loader, prefix="train_")
+                vis_dict = visualize_recon(args, vis_dict, model, test_loader, prefix="test_")
+                model = model.train()
+
 
             wandb.log(vis_dict, step=epoch)
 
