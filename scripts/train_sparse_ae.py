@@ -37,7 +37,7 @@ def feature_density_plot(args, loss_dict, vis_dict, prefix="test_"):
 
 
 def visualize_dictionary(args, vis_dict, model, n_vis=100):
-    foo = model.W_dec.data.cpu()  # shape: (a, b * c * d)
+    foo = model.dec.weight.data.cpu().T  # shape: (a, b * c * d)
     foo = einops.rearrange(foo, "a (b c d) -> a b c d", b=3, c=args.patch_sz)
 
     # normalize using max/min dictionary values
@@ -107,6 +107,11 @@ class PatchDataset(Dataset):
         self.dset = dset
         self.patch_sz = patch_sz
         self.stride = stride
+        
+        # CIFAR10 mean/std
+        # self.mean = [0.4914, 0.4822, 0.4465]
+        # self.std = [0.2023, 0.1994, 0.2010]
+        # self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
 
     def __len__(self):
         return len(self.dset)
@@ -114,7 +119,10 @@ class PatchDataset(Dataset):
     def __getitem__(self, idx):
         # Get all patches for this image (and strip off labels)
         img, label = self.dset[idx]
-        return torch.nn.functional.unfold(img, self.patch_sz, stride=self.stride).clone().T
+        # img = self.normalize(img)       # normalize image with dataset-level stats prior to patchifying
+        out = torch.nn.functional.unfold(img, self.patch_sz, stride=self.stride).clone().T
+        # out -= torch.mean(out, dim=1, keepdim=True)
+        return out
 
 def run_epoch(args, model, loader, optimizer, epoch):
     is_train = optimizer is not None
@@ -122,9 +130,8 @@ def run_epoch(args, model, loader, optimizer, epoch):
 
     total_loss, total_recon, total_l1, total_num, data_bar = 0.0, 0.0, 0.0, 0, tqdm(loader)
 
-    if not is_train:
-        # feature density is the fraction of inputs that a dictionary element activates for
-        dict_feature_density = torch.zeros((args.dict_sz,), device="cuda")
+    # feature density is the fraction of inputs that a dictionary element activates for
+    dict_feature_density = torch.zeros((args.dict_sz,), device="cuda")
 
     with torch.enable_grad() if is_train else torch.no_grad():
         for data in data_bar:
@@ -145,8 +152,7 @@ def run_epoch(args, model, loader, optimizer, epoch):
                 total_l1 += l1_loss.item() * data.size(0)
 
                 # TODO: add a bunch of tracking for dead neurons + representation sparsity
-                if not is_train:
-                    dict_feature_density += (acts > 0).sum(dim=0)
+                dict_feature_density += (acts > 0).sum(dim=0)
 
                 # TODO: reinitialization of dead neurons
 
@@ -157,8 +163,7 @@ def run_epoch(args, model, loader, optimizer, epoch):
         "recon_loss" : total_recon / total_num,
         "l1_loss" : total_l1 / total_num,
     }
-    if not is_train:
-        loss_dict["feature_density"] = dict_feature_density / total_num
+    loss_dict["feature_density"] = dict_feature_density / total_num
 
     return loss_dict
 
