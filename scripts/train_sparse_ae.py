@@ -36,6 +36,23 @@ def feature_density_plot(args, loss_dict, vis_dict, prefix="test_"):
     return vis_dict
 
 
+def activation_sparsity_plot(args, loss_dict, vis_dict, prefix="test_"):
+    assert "act_sparsity" in loss_dict
+    vis_dict["test_mean_act_sparsity"] = loss_dict["act_sparsity"].cpu().mean()
+    
+    act_cnt = loss_dict["act_sparsity"].cpu().numpy()
+    plt.figure(figsize=(10, 6))
+    plt.hist(act_cnt, bins=100, color='skyblue', edgecolor='black', alpha=0.7)
+    plt.title("Activation Sparsity")
+    plt.xlabel("% activated")
+    plt.ylabel("Counts")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    vis_dict[prefix + "act_sparsity_plot"] = wandb.Image(plt)
+    plt.close()
+
+    return vis_dict
+
 def visualize_dictionary(args, vis_dict, model, feature_density, n_vis=30):
     foo = model.dec.weight.data.cpu().T  # shape: (a, b * c * d)
     foo = einops.rearrange(foo, "a (b c d) -> a b c d", b=3, c=args.patch_sz)
@@ -47,6 +64,8 @@ def visualize_dictionary(args, vis_dict, model, feature_density, n_vis=30):
 
     n_vis = min(n_vis, normalized.shape[0])
     upscale_factor = 20
+    
+    feature_density = feature_density[feature_density != 0]
 
     # highest frequency
     idx = torch.flip(feature_density.cpu().sort()[1], dims=[0])
@@ -68,7 +87,7 @@ def visualize_dictionary(args, vis_dict, model, feature_density, n_vis=30):
 
 
     # lowest frequency
-    idx = feature_density[feature_density > 0].cpu().sort()[1]
+    idx = feature_density.cpu().sort()[1]
     normalized = normalized[idx]
     sorted_density = feature_density[idx]
 
@@ -88,11 +107,11 @@ def visualize_dictionary(args, vis_dict, model, feature_density, n_vis=30):
     return vis_dict
 
 
-def visualize_recon(args, vis_dict, model, loader, n_vis=100, prefix=""):
+def visualize_recon(args, vis_dict, model, loader, n_vis=30, prefix=""):
     # generate from a single batch
     x = next(iter(loader)).cuda(non_blocking=True).flatten(0, 1)
     x = x[torch.randperm(x.shape[0])]       # randomize patches so not all are from a single image
-    x_recon, _ = model(x)
+    x_recon, acts = model(x)
     
     x = einops.rearrange(x, "a (b c d) -> a b c d", b=3, c=args.patch_sz).cpu().detach()
     x_recon = einops.rearrange(x_recon, "a (b c d) -> a b c d", b=3, c=args.patch_sz).cpu().detach()
@@ -114,6 +133,7 @@ def visualize_recon(args, vis_dict, model, loader, n_vis=100, prefix=""):
         axes[0, i].axis('off')
         axes[1, i].imshow(resized_x_recon[i].permute(1, 2, 0).numpy())
         axes[1, i].axis('off')
+        axes[1, i].set_title(f"{int((acts[i] > 0).sum().item())}", fontsize=8)
 
     fig.text(0.01, 0.75, 'Original', va='center', ha='left', fontsize=12)
     fig.text(0.01, 0.25, 'Reconstructed', va='center', ha='left', fontsize=12)
@@ -132,9 +152,9 @@ class PatchDataset(Dataset):
         self.stride = stride
         
         # CIFAR10 mean/std
-        # self.mean = [0.4914, 0.4822, 0.4465]
-        # self.std = [0.2023, 0.1994, 0.2010]
-        # self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
+        self.mean = [0.4914, 0.4822, 0.4465]
+        self.std = [0.2023, 0.1994, 0.2010]
+        self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
 
     def __len__(self):
         return len(self.dset)
@@ -142,9 +162,9 @@ class PatchDataset(Dataset):
     def __getitem__(self, idx):
         # Get all patches for this image (and strip off labels)
         img, label = self.dset[idx]
-        # img = self.normalize(img)       # normalize image with dataset-level stats prior to patchifying
+        img = self.normalize(img)       # normalize image with dataset-level stats prior to patchifying
         out = torch.nn.functional.unfold(img, self.patch_sz, stride=self.stride).clone().T
-        out -= torch.mean(out, dim=1, keepdim=True)
+        # out -= torch.mean(out, dim=1, keepdim=True)
         return out
 
 def run_epoch(args, model, loader, optimizer, epoch):
@@ -153,8 +173,10 @@ def run_epoch(args, model, loader, optimizer, epoch):
 
     total_loss, total_recon, total_l1, total_num, data_bar = 0.0, 0.0, 0.0, 0, tqdm(loader)
 
-    # feature density is the fraction of inputs that a dictionary element activates for
-    dict_feature_density = torch.zeros((args.dict_sz,), device="cuda")
+    if not is_train:
+        # feature density is the fraction of inputs that a dictionary element activates for
+        dict_feature_density = torch.zeros((args.dict_sz,), device="cuda")
+        feature_sparsity = []
 
     with torch.enable_grad() if is_train else torch.no_grad():
         for data in data_bar:
@@ -174,8 +196,9 @@ def run_epoch(args, model, loader, optimizer, epoch):
                 total_recon += recon_loss.item() * data.size(0)
                 total_l1 += l1_loss.item() * data.size(0)
 
-                # TODO: add a bunch of tracking for dead neurons + representation sparsity
-                dict_feature_density += (acts > 0).sum(dim=0)
+                if not is_train:
+                    dict_feature_density += (acts > 0).sum(dim=0)
+                    feature_sparsity.append(((acts > 0).sum(dim=1) / args.dict_sz).cpu())
 
                 # TODO: reinitialization of dead neurons
 
@@ -186,7 +209,9 @@ def run_epoch(args, model, loader, optimizer, epoch):
         "recon_loss" : total_recon / total_num,
         "l1_loss" : total_l1 / total_num,
     }
-    loss_dict["feature_density"] = dict_feature_density / total_num
+    if not is_train:
+        loss_dict["feature_density"] = dict_feature_density / total_num
+        loss_dict["act_sparsity"] = torch.concat(feature_sparsity)
 
     return loss_dict
 
@@ -212,11 +237,7 @@ def train(args):
         train_loss_dict = run_epoch(args, model, train_loader, optimizer, epoch)
         test_loss_dict = run_epoch(args, model, test_loader, None, epoch)
 
-
-        vis_dict = visualize_dictionary(args, {}, model, test_loss_dict["feature_density"])
-
-
-        if args.wandb:
+        if args.wandb and epoch % 50 == 0:
             vis_dict = {}
             vis_dict["train_loss"] = train_loss_dict["loss"]
             vis_dict["train_recon"] = train_loss_dict["recon_loss"]
@@ -229,12 +250,12 @@ def train(args):
             with torch.no_grad():
                 model = model.eval()
                 vis_dict = feature_density_plot(args, test_loss_dict, vis_dict)
+                vis_dict = activation_sparsity_plot(args, test_loss_dict, vis_dict)
                 vis_dict = visualize_dictionary(args, vis_dict, model, test_loss_dict["feature_density"])
 
                 vis_dict = visualize_recon(args, vis_dict, model, train_loader, prefix="train_")
                 vis_dict = visualize_recon(args, vis_dict, model, test_loader, prefix="test_")
                 model = model.train()
-
 
             wandb.log(vis_dict, step=epoch)
 
