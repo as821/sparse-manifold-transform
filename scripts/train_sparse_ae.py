@@ -36,7 +36,7 @@ def feature_density_plot(args, loss_dict, vis_dict, prefix="test_"):
     return vis_dict
 
 
-def visualize_dictionary(args, vis_dict, model, n_vis=100):
+def visualize_dictionary(args, vis_dict, model, feature_density, n_vis=30):
     foo = model.dec.weight.data.cpu().T  # shape: (a, b * c * d)
     foo = einops.rearrange(foo, "a (b c d) -> a b c d", b=3, c=args.patch_sz)
 
@@ -46,20 +46,43 @@ def visualize_dictionary(args, vis_dict, model, n_vis=100):
     normalized = (foo - img_min) / (img_max - img_min + 1e-8)
 
     n_vis = min(n_vis, normalized.shape[0])
-
     upscale_factor = 20
-    resized = torch.nn.functional.interpolate(normalized[:n_vis], scale_factor=upscale_factor, mode='nearest')
 
+    # highest frequency
+    idx = torch.flip(feature_density.cpu().sort()[1], dims=[0])
+    normalized = normalized[idx]
+    sorted_density = feature_density[idx]
+    
+    resized = torch.nn.functional.interpolate(normalized[:n_vis], scale_factor=upscale_factor, mode='nearest')
     fig, axes = plt.subplots(1, n_vis, figsize=(n_vis * 2, 3))
     if n_vis == 1:
         axes = [axes]
     for i in range(n_vis):
-        img = resized[i].permute(1, 2, 0).numpy()  # CHW -> HWC
+        img = resized[i].permute(1, 2, 0).numpy()
         axes[i].imshow(img)
+        axes[i].set_title(f"{sorted_density[i].item():.2f}", fontsize=8)
         axes[i].axis('off')
-
     plt.tight_layout()
-    vis_dict["dict"] = wandb.Image(plt)
+    vis_dict["dict_high_density"] = wandb.Image(plt)
+    plt.close()
+
+
+    # lowest frequency
+    idx = feature_density[feature_density > 0].cpu().sort()[1]
+    normalized = normalized[idx]
+    sorted_density = feature_density[idx]
+
+    resized = torch.nn.functional.interpolate(normalized[:n_vis], scale_factor=upscale_factor, mode='nearest')
+    fig, axes = plt.subplots(1, n_vis, figsize=(n_vis * 2, 3))
+    if n_vis == 1:
+        axes = [axes]
+    for i in range(n_vis):
+        img = resized[i].permute(1, 2, 0).numpy()
+        axes[i].imshow(img)
+        axes[i].set_title(f"{sorted_density[i].item():.2f}", fontsize=8)
+        axes[i].axis('off')
+    plt.tight_layout()
+    vis_dict["dict_low_density"] = wandb.Image(plt)
     plt.close()
 
     return vis_dict
@@ -121,7 +144,7 @@ class PatchDataset(Dataset):
         img, label = self.dset[idx]
         # img = self.normalize(img)       # normalize image with dataset-level stats prior to patchifying
         out = torch.nn.functional.unfold(img, self.patch_sz, stride=self.stride).clone().T
-        # out -= torch.mean(out, dim=1, keepdim=True)
+        out -= torch.mean(out, dim=1, keepdim=True)
         return out
 
 def run_epoch(args, model, loader, optimizer, epoch):
@@ -189,6 +212,10 @@ def train(args):
         train_loss_dict = run_epoch(args, model, train_loader, optimizer, epoch)
         test_loss_dict = run_epoch(args, model, test_loader, None, epoch)
 
+
+        vis_dict = visualize_dictionary(args, {}, model, test_loss_dict["feature_density"])
+
+
         if args.wandb:
             vis_dict = {}
             vis_dict["train_loss"] = train_loss_dict["loss"]
@@ -202,7 +229,7 @@ def train(args):
             with torch.no_grad():
                 model = model.eval()
                 vis_dict = feature_density_plot(args, test_loss_dict, vis_dict)
-                vis_dict = visualize_dictionary(args, vis_dict, model)
+                vis_dict = visualize_dictionary(args, vis_dict, model, test_loss_dict["feature_density"])
 
                 vis_dict = visualize_recon(args, vis_dict, model, train_loader, prefix="train_")
                 vis_dict = visualize_recon(args, vis_dict, model, test_loader, prefix="test_")
