@@ -20,8 +20,10 @@ from sparse_ae import SparseAutoEncoder
 def feature_density_plot(args, loss_dict, vis_dict, prefix="test_"):
     assert "feature_density" in loss_dict
     log10 = loss_dict["feature_density"].cpu()
-    vis_dict[prefix + "dead_neuron"] = log10[log10 == 0].shape[0]
-    log10 = log10[log10 > 0].log10().numpy()        # only keep non-zero features
+
+    dead_neuron = log10 < 1e-4
+    vis_dict[prefix + "dead_neuron"] = log10[dead_neuron].shape[0]
+    log10 = log10[log10 != 0].log10().numpy()        # only keep non-zero features (this might keep some "dead" neurons though. good for visualization)
     
     plt.figure(figsize=(10, 6))
     plt.hist(log10, bins=100, color='skyblue', edgecolor='black', alpha=0.7)
