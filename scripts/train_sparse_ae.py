@@ -119,11 +119,14 @@ def visualize_recon(args, vis_dict, model, loader, n_vis=30, prefix=""):
     x_recon = einops.rearrange(x_recon, "a (b c d) -> a b c d", b=3, c=args.patch_sz).cpu().detach()
     n_vis = min(n_vis, x.shape[0])
 
-    # 0-1 normalize reconstrution (original should already be in range)
+    # 0-1 normalize reconstrution and original
     img_min = x_recon.amin(dim=(0, 2, 3), keepdim=True)
     img_max = x_recon.amax(dim=(0, 2, 3), keepdim=True)
     x_recon = (x_recon - img_min) / (img_max - img_min + 1e-8)
 
+    img_min = x.amin(dim=(0, 2, 3), keepdim=True)
+    img_max = x.amax(dim=(0, 2, 3), keepdim=True)
+    x = (x - img_min) / (img_max - img_min + 1e-8)
 
     upscale_factor = 20
     resized_x = torch.nn.functional.interpolate(x[:n_vis], scale_factor=upscale_factor, mode='nearest')
@@ -166,7 +169,9 @@ class PatchDataset(Dataset):
         img, label = self.dset[idx]
         img = self.normalize(img)       # normalize image with dataset-level stats prior to patchifying
         out = torch.nn.functional.unfold(img, self.patch_sz, stride=self.stride).clone().T
-        # out -= torch.mean(out, dim=1, keepdim=True)
+
+        # convert all patches to unit-norm
+        out = torch.nn.functional.normalize(out, dim=1)
         return out
 
 def run_epoch(args, model, loader, optimizer, epoch):
@@ -199,12 +204,12 @@ def run_epoch(args, model, loader, optimizer, epoch):
                 total_l1 += l1_loss.item() * data.size(0)
 
                 if not is_train:
-                    dict_feature_density += (acts > 0).sum(dim=0)
-                    feature_sparsity.append(((acts > 0).sum(dim=1) / args.dict_sz).cpu())
+                    dict_feature_density += (acts.detach() > 0).sum(dim=0)
+                    feature_sparsity.append(((acts.detach() > 0).sum(dim=1) / args.dict_sz).cpu())
 
                 # TODO: reinitialization of dead neurons
 
-            data_bar.set_description(f"{'Train' if is_train else 'Test'} Epoch: [{epoch}] Loss: {total_loss / total_num :.4f}")
+            data_bar.set_description(f"{'Train' if is_train else 'Test'} Epoch: [{epoch}] Loss: {total_loss / total_num :.4f} ({total_l1 / total_num :.4f} {total_recon / total_num :.4f})")
 
     loss_dict = {
         "loss" : total_loss / total_num,
@@ -222,10 +227,10 @@ def train(args):
 
     train_set = PatchDataset(torchvision.datasets.CIFAR10(root=args.dset_path, train=True, transform=transforms.Compose([transforms.ToTensor()]), download=True), args.patch_sz, args.stride)
     test_set = PatchDataset(torchvision.datasets.CIFAR10(root=args.dset_path, train=False, transform=transforms.Compose([transforms.ToTensor()]), download=True), args.patch_sz, args.stride)
-    train_loader = DataLoader(train_set, batch_size=args.batch_sz, shuffle=True, drop_last=True, num_workers=8, pin_memory=True)
-    test_loader = DataLoader(test_set, batch_size=args.batch_sz, shuffle=False, num_workers=8, pin_memory=True)
+    train_loader = DataLoader(train_set, batch_size=args.batch_sz, shuffle=True, drop_last=True, num_workers=8, pin_memory=True, persistent_workers=True)
+    test_loader = DataLoader(test_set, batch_size=args.batch_sz, shuffle=False, num_workers=8, pin_memory=True, persistent_workers=True)
 
-    model = SparseAutoEncoder(3 * args.patch_sz * args.patch_sz, args.dict_sz)
+    model = SparseAutoEncoder(3 * args.patch_sz * args.patch_sz, args.dict_sz, args.activ_thresh)
     model = model.to("cuda", non_blocking=True)
     model = torch.compile(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd, fused=True)
@@ -237,35 +242,36 @@ def train(args):
     best_loss = None
     for epoch in range(args.epochs):
         train_loss_dict = run_epoch(args, model, train_loader, optimizer, epoch)
-        test_loss_dict = run_epoch(args, model, test_loader, None, epoch)
+        if epoch % args.log_freq == 0 or epoch == args.epochs - 1:
+            test_loss_dict = run_epoch(args, model, test_loader, None, epoch)
+            
+            if args.wandb:
+                vis_dict = {}
+                vis_dict["train_loss"] = train_loss_dict["loss"]
+                vis_dict["train_recon"] = train_loss_dict["recon_loss"]
+                vis_dict["train_l1"] = train_loss_dict["l1_loss"]
 
-        if args.wandb and epoch % 50 == 0:
-            vis_dict = {}
-            vis_dict["train_loss"] = train_loss_dict["loss"]
-            vis_dict["train_recon"] = train_loss_dict["recon_loss"]
-            vis_dict["train_l1"] = train_loss_dict["l1_loss"]
+                vis_dict["test_loss"] = test_loss_dict["loss"]
+                vis_dict["test_recon"] = test_loss_dict["recon_loss"]
+                vis_dict["test_l1"] = test_loss_dict["l1_loss"]
 
-            vis_dict["test_loss"] = test_loss_dict["loss"]
-            vis_dict["test_recon"] = test_loss_dict["recon_loss"]
-            vis_dict["test_l1"] = test_loss_dict["l1_loss"]
+                with torch.no_grad():
+                    model = model.eval()
+                    vis_dict = feature_density_plot(args, test_loss_dict, vis_dict)
+                    vis_dict = activation_sparsity_plot(args, test_loss_dict, vis_dict)
+                    vis_dict = visualize_dictionary(args, vis_dict, model, test_loss_dict["feature_density"])
 
-            with torch.no_grad():
-                model = model.eval()
-                vis_dict = feature_density_plot(args, test_loss_dict, vis_dict)
-                vis_dict = activation_sparsity_plot(args, test_loss_dict, vis_dict)
-                vis_dict = visualize_dictionary(args, vis_dict, model, test_loss_dict["feature_density"])
+                    vis_dict = visualize_recon(args, vis_dict, model, train_loader, prefix="train_")
+                    vis_dict = visualize_recon(args, vis_dict, model, test_loader, prefix="test_")
+                    model = model.train()
 
-                vis_dict = visualize_recon(args, vis_dict, model, train_loader, prefix="train_")
-                vis_dict = visualize_recon(args, vis_dict, model, test_loader, prefix="test_")
-                model = model.train()
+                wandb.log(vis_dict, step=epoch)
 
-            wandb.log(vis_dict, step=epoch)
+            if best_loss is None or test_loss_dict["loss"] < best_loss:
+                best_loss = test_loss_dict["loss"]
 
-        if best_loss is None or test_loss_dict["loss"] < best_loss:
-            best_loss = test_loss_dict["loss"]
-
-        if best_loss == test_loss_dict["loss"]:
-            torch.save(model.state_dict(), args.ckpt_path + "sae_best.pt")
+            if best_loss == test_loss_dict["loss"]:
+                torch.save(model.state_dict(), args.ckpt_path + "sae_best.pt")
 
     torch.save(model.state_dict(), args.ckpt_path + "sae_final.pt")
     if args.wandb:
@@ -282,11 +288,13 @@ if __name__ == "__main__":
     parser.add_argument('--patch-sz', default=6, type=int, help='image patch size')
     parser.add_argument('--stride', type=int, default=1)
 
+    parser.add_argument('--activ_thresh', type=float, default=0, help="0/1 threshold for activations")
     parser.add_argument('--l1', type=float, default=0)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--wd', type=float, default=0)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_sz', type=int, default=250)
+    parser.add_argument('--log_freq', type=int, default=50)
 
     parser.add_argument('--wandb', action='store_true')
 
