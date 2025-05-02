@@ -56,7 +56,7 @@ def activation_sparsity_plot(args, loss_dict, vis_dict, prefix="test_"):
     return vis_dict
 
 def visualize_dictionary(args, vis_dict, model, feature_density, n_vis=30):
-    foo = model.dec.weight.data.cpu().T  # shape: (a, b * c * d)
+    foo = model.dec.data.cpu()
     foo = einops.rearrange(foo, "a (b c d) -> a b c d", b=3, c=args.patch_sz)
 
     # normalize using max/min dictionary values
@@ -198,6 +198,9 @@ def run_epoch(args, model, loader, optimizer, epoch):
                 optimizer.step()
 
             with torch.no_grad():
+                # normalize dictionary members after each step
+                model.dec.data[:] = torch.nn.functional.normalize(model.dec.data, dim=0)
+
                 total_num += data.size(0)
                 total_loss += loss.item() * data.size(0)
                 total_recon += recon_loss.item() * data.size(0)
@@ -209,7 +212,7 @@ def run_epoch(args, model, loader, optimizer, epoch):
 
                 # TODO: reinitialization of dead neurons
 
-            data_bar.set_description(f"{'Train' if is_train else 'Test'} Epoch: [{epoch}] Loss: {total_loss / total_num :.4f} ({total_l1 / total_num :.4f} {total_recon / total_num :.4f})")
+            data_bar.set_description(f"{'Train' if is_train else 'Test'} Epoch: [{epoch}] Loss: {total_loss / total_num :.4f} (l1: {total_l1 / total_num :.4f}, l2: {total_recon / total_num :.4f})")
 
     loss_dict = {
         "loss" : total_loss / total_num,
@@ -227,8 +230,8 @@ def train(args):
 
     train_set = PatchDataset(torchvision.datasets.CIFAR10(root=args.dset_path, train=True, transform=transforms.Compose([transforms.ToTensor()]), download=True), args.patch_sz, args.stride)
     test_set = PatchDataset(torchvision.datasets.CIFAR10(root=args.dset_path, train=False, transform=transforms.Compose([transforms.ToTensor()]), download=True), args.patch_sz, args.stride)
-    train_loader = DataLoader(train_set, batch_size=args.batch_sz, shuffle=True, drop_last=True, num_workers=8, pin_memory=True, persistent_workers=True)
-    test_loader = DataLoader(test_set, batch_size=args.batch_sz, shuffle=False, num_workers=8, pin_memory=True, persistent_workers=True)
+    train_loader = DataLoader(train_set, batch_size=args.batch_sz, shuffle=True, drop_last=True, num_workers=8, pin_memory=True)
+    test_loader = DataLoader(test_set, batch_size=args.batch_sz, shuffle=False, num_workers=8, pin_memory=True)
 
     model = SparseAutoEncoder(3 * args.patch_sz * args.patch_sz, args.dict_sz, args.activ_thresh)
     model = model.to("cuda", non_blocking=True)
