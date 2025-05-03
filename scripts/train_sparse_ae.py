@@ -237,9 +237,10 @@ def train(args):
     best_loss = None
     for epoch in range(args.epochs):
         train_loss_dict = run_epoch(args, model, train_loader, optimizer, epoch)
-        test_loss_dict = run_epoch(args, model, test_loader, None, epoch)
 
         if args.wandb and epoch % 50 == 0:
+            test_loss_dict = run_epoch(args, model, test_loader, None, epoch)
+            
             vis_dict = {}
             vis_dict["train_loss"] = train_loss_dict["loss"]
             vis_dict["train_recon"] = train_loss_dict["recon_loss"]
@@ -261,11 +262,11 @@ def train(args):
 
             wandb.log(vis_dict, step=epoch)
 
-        if best_loss is None or test_loss_dict["loss"] < best_loss:
-            best_loss = test_loss_dict["loss"]
+            if best_loss is None or test_loss_dict["loss"] < best_loss:
+                best_loss = test_loss_dict["loss"]
 
-        if best_loss == test_loss_dict["loss"]:
-            torch.save(model.state_dict(), args.ckpt_path + "sae_best.pt")
+            if best_loss == test_loss_dict["loss"]:
+                torch.save(model.state_dict(), args.ckpt_path + "sae_best.pt")
 
     torch.save(model.state_dict(), args.ckpt_path + "sae_final.pt")
     if args.wandb:

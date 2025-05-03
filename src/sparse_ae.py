@@ -12,10 +12,6 @@ class SparseAutoEncoder(torch.nn.Module):
         self.enc = torch.nn.Sequential(
             torch.nn.Linear(input_sz, hidden_sz, bias=False),
             torch.nn.ReLU(),
-            # torch.nn.Linear(hidden_sz, hidden_sz, bias=True),
-            # torch.nn.ReLU(),
-            # torch.nn.Linear(hidden_sz, hidden_sz, bias=True),
-            # torch.nn.ReLU(),
         )
 
         self.dec = torch.nn.Linear(hidden_sz, input_sz, bias=False)
