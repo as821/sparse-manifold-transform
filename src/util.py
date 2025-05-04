@@ -80,7 +80,7 @@ def load_ckpt(path):
     args = parser.parse_args(args=[], namespace=argparse.Namespace(**ckpt_args))
 
     basis = torch.load(path + "sc_basis.pt")
-    sc_layer = SparseCodeLayer(basis.shape[1], basis, args.gq_thresh)
+    sc_layer = SparseCodeLayer(basis.shape[1], args.gq_thresh, basis)
     smt_layer = ManifoldEmbedLayer(args, None, None, torch.from_numpy(np.load(path + "smt_proj.npy")))
     U_full = torch.from_numpy(np.load(path + "smt_U_full.npy"))
     inv_sqrt_cov = torch.from_numpy(np.load(path + "smt_inv_sqrt_cov.npy"))

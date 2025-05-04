@@ -6,8 +6,6 @@ References:
 (2): Minimalistic Unsupervised Representation Learning with the Sparse Manifold Transform https://arxiv.org/pdf/2209.15261.pdf
 """
 
-# NOTE: (also, increasing whitening tolerance decreases sparsity, could use stricter dictionary + maybe make those work better?)
-
 import torch
 from einops import rearrange
 import sys
@@ -23,7 +21,7 @@ from classifier import eval_knn_classifier
 
 from preprocessor import ImagePreprocessor, generate_dset
 from manifold_embedding import ManifoldEmbedLayer
-from sparse_code import generate_dict, SparseCodeLayer
+from sparse_code import SparseCodeLayer
 
 import pdb
 

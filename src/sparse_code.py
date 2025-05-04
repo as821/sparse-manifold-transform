@@ -16,7 +16,8 @@ class SparseCodeLayer:
         self.basis = phi
         
         # usage of basis assumes it has unit norm
-        assert (torch.linalg.norm(self.basis, dim=0) - 1).abs().max() < 1e-3
+        if self.basis is not None:
+            assert (torch.linalg.norm(self.basis, dim=0) - 1).abs().max() < 1e-3
 
     def sparse_code_img(self, patches):
         # Given the centered and whitened patches for a single image, return their sparse codes
